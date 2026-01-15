@@ -1,0 +1,7 @@
+{
+  "name": "SANGEETHA THEATER",
+  "description": "SANGEETHA THEATER",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
