@@ -535,7 +535,8 @@ export const OwnerDashboard: React.FC = () => {
 
     const fetchData = useCallback(async (silent = false) => {
         if (!user) return;
-        if (!silent) setLoading(true);
+        // Don't show full screen spinner if we already have data
+        if (!silent && orders.length === 0) setLoading(true);
         try {
             const [
                 ordersData, menuData, salesData, sellingItemsData, statusSummaryData,
@@ -583,7 +584,7 @@ export const OwnerDashboard: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [user]);
+    }, [user, orders.length]);
 
     useEffect(() => {
         fetchData();
@@ -599,7 +600,6 @@ export const OwnerDashboard: React.FC = () => {
 
     const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
         // --- OPTIMISTIC UI UPDATE ---
-        // Immediately update state so the order moves without waiting for the server
         setOrders(prevOrders => 
             prevOrders.map(order => 
                 order.id === orderId ? { ...order, status: newStatus } : order
@@ -608,25 +608,21 @@ export const OwnerDashboard: React.FC = () => {
 
         try {
             await updateOrderStatus(orderId, newStatus);
-            // Optional: Show a subtle success toast
             window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order status updated!' } }));
         } catch (error) { 
             console.error("Failed to update status:", error);
-            // Rollback on error
             fetchData(true);
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to update order status. Please try again.' } }));
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to update status.' } }));
         }
     };
 
     const handleAvailabilityChange = async (itemId: string, isAvailable: boolean) => {
-        // OPTIMISTIC
         setMenu(prev => prev.map(item => item.id === itemId ? { ...item, isAvailable } : item));
-        
         try {
             await updateMenuAvailability(itemId, isAvailable);
         } catch (error) { 
-            console.error("Failed to update menu availability", error);
-            fetchData(true); // Sync back
+            console.error("Failed to update availability", error);
+            fetchData(true);
         }
     };
 
@@ -636,18 +632,13 @@ export const OwnerDashboard: React.FC = () => {
     };
 
     const handleDeleteStaff = async (userId: string) => {
-        if (!window.confirm("Are you sure you want to remove this staff member?")) {
-            return;
-        }
+        if (!window.confirm("Are you sure?")) return;
         try {
             await deleteScanTerminalStaff(userId);
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Staff removed successfully' } }));
             setStaff(prevStaff => prevStaff.filter(s => s.id !== userId));
             fetchData(true);
         } catch (error) {
             console.error("Error removing staff:", error);
-            const msg = error instanceof Error ? error.message : 'Failed to delete. Please try again.';
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: msg } }));
         }
     };
     
