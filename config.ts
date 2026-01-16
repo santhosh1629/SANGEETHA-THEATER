@@ -5,10 +5,10 @@
  */
 
 export const CONFIG = {
-    // Replace this ID when changing your Razorpay account
+    // Your Live Public Key
     RAZORPAY_KEY_ID: 'rzp_live_S0V6Bz1xXIWsbn',
     
-    // Other settings can go here
+    // Other settings
     APP_NAME: 'SANGEETHA THEATER',
     SUPPORT_EMAIL: 'support@sangeethatheater.app'
 };

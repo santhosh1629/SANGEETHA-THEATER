@@ -20,14 +20,18 @@ const saveCartToStorage = (cart: CartItem[]) => {
 
 const getStatusDisplay = (status: OrderStatus) => {
   switch (status) {
+    case OrderStatus.CONFIRMED:
     case OrderStatus.PENDING:
-      return { text: 'Preparing', icon: '⏳', className: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30' };
+      return { text: 'Confirmed', icon: '✅', className: 'bg-green-500/20 text-green-300 border-green-400/30' };
     case OrderStatus.PREPARED:
       return { text: 'Ready for Pickup', icon: '🍴', className: 'bg-blue-500/20 text-blue-300 border-blue-400/30' };
+    case OrderStatus.DELIVERED:
     case OrderStatus.COLLECTED:
-      return { text: 'Collected', icon: '✅', className: 'bg-green-500/20 text-green-300 border-green-400/30' };
+      return { text: 'Delivered', icon: '🤝', className: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30' };
     case OrderStatus.CANCELLED:
       return { text: 'Cancelled', icon: '❌', className: 'bg-red-500/20 text-red-300 border-red-400/30' };
+    case OrderStatus.REFUNDED:
+        return { text: 'Refunded', icon: '💰', className: 'bg-purple-500/20 text-purple-300 border-purple-400/30' };
     default:
       return { text: status, icon: '❓', className: 'bg-gray-500/20 text-gray-300 border-gray-400/30' };
   }
@@ -80,11 +84,11 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                             </div>
                             <div className="border-t border-surface-light my-2"></div>
                              <div className="flex justify-between font-bold font-heading text-textPrimary">
-                                <span>Total</span>
+                                <span>Total Paid</span>
                                 <span>₹{(order.totalAmount || 0).toFixed(2)}</span>
                             </div>
 
-                            {order.status === OrderStatus.COLLECTED && order.deliveredByStaffName && (
+                            {(order.status === OrderStatus.DELIVERED || order.status === OrderStatus.COLLECTED) && order.deliveredByStaffName && (
                                 <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
                                     <p className="text-sm font-bold text-green-300 flex items-center gap-2">
                                         <span>🤝</span> Delivered by: {order.deliveredByStaffName} (Staff)
@@ -102,32 +106,25 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                             <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border ${statusInfo.className}`}>
                                 {statusInfo.icon} {statusInfo.text}
                             </div>
-                            {(order.status === OrderStatus.PENDING || order.status === OrderStatus.PREPARED) && (
+                            {(order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.PENDING || order.status === OrderStatus.PREPARED) && (
                                 <div className="mt-4 flex flex-col items-center">
                                     <p className="text-sm text-textSecondary mb-2">Show this QR code at the counter for pickup:</p>
                                     <div className="p-2 bg-white rounded-lg"><QRCodeSVG value={order.qrToken} size={128} /></div>
                                 </div>
                             )}
-                            {order.status === OrderStatus.CANCELLED && order.refundAmount != null && (
-                                <p className="mt-4 text-sm text-red-400 bg-red-500/20 p-2 rounded-md">
-                                    A refund of ₹{(order.refundAmount || 0).toFixed(2)} has been processed.
-                                </p>
-                            )}
                         </div>
                     </div>
-                     { (order.status === OrderStatus.COLLECTED || order.status === OrderStatus.CANCELLED) && (
-                        <div className="mt-4 pt-4 border-t border-surface-light">
-                            <button
-                                onClick={() => onReorder(order)}
-                                className="w-full bg-primary text-background font-semibold py-2 px-4 rounded-lg hover:bg-primary-dark transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                                </svg>
-                                <span>Reorder</span>
-                            </button>
-                        </div>
-                     )}
+                     <div className="mt-4 pt-4 border-t border-surface-light">
+                        <button
+                            onClick={() => onReorder(order)}
+                            className="w-full bg-primary text-background font-semibold py-2 px-4 rounded-lg hover:bg-primary-dark transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                            </svg>
+                            <span>Reorder</span>
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -239,8 +236,8 @@ const OrderHistoryPage: React.FC = () => {
                 </div>
             ) : (
                 <div className="text-center py-16 bg-surface backdrop-blur-lg border border-surface-light rounded-2xl shadow-md">
-                    <p className="text-xl font-semibold text-textPrimary">No Order History Found</p>
-                    <p className="text-textSecondary mt-2">You haven't placed any orders yet.</p>
+                    <p className="text-xl font-semibold text-textPrimary">No successful orders yet.</p>
+                    <p className="text-textSecondary mt-2">Orders will appear here once payment is complete.</p>
                 </div>
             )}
         </div>

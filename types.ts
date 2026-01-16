@@ -54,10 +54,13 @@ export interface CartItem extends MenuItem {
 }
 
 export enum OrderStatus {
-  PENDING = 'pending',
-  PREPARED = 'prepared',
-  COLLECTED = 'collected',
-  CANCELLED = 'cancelled',
+  PENDING = 'pending', // Legacy support
+  CONFIRMED = 'Confirmed',
+  PREPARED = 'Prepared',
+  DELIVERED = 'Delivered',
+  COLLECTED = 'Collected',
+  CANCELLED = 'Cancelled',
+  REFUNDED = 'Refunded',
   SEAT_SELECTED = 'Seat Selected',
 }
 
@@ -76,6 +79,7 @@ export interface Order {
   }[];
   totalAmount: number;
   status: OrderStatus;
+  payment_status: 'paid' | 'pending' | 'failed' | 'created';
   qrToken: string;
   timestamp: Date;
   paymentSuccess: boolean;
@@ -116,7 +120,6 @@ export interface StudentProfile {
   loyaltyPoints?: number;
 }
 
-// Added Offer interface to fix missing export error
 export interface Offer {
   id: string;
   code: string;
