@@ -57,7 +57,9 @@ const mapOrder = (row: any): Order => ({
     deliveredByStaffName: row.delivered_by_staff_name,
     orderType: 'real',
     couponCode: row.coupon_code || '', 
-    discountAmount: Number(row.discount_amount || 0)
+    discountAmount: Number(row.discount_amount || 0),
+    preparedBy: row.prepared_by,
+    preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
 });
 
 const handleSupabaseError = (error: any, context: string) => {
@@ -229,8 +231,6 @@ export const updateOrderPaymentStatus = async (orderId: string, success: boolean
     if (error) handleSupabaseError(error, "Orders Payment Status Update");
 };
 
-// --- FIX: Added missing exported members ---
-
 /**
  * Fetch orders for a specific student
  */
@@ -255,6 +255,58 @@ export const getOrderById = async (orderId: string): Promise<Order> => {
         throw new Error("Order not found.");
     }
     return mapOrder(data);
+};
+
+// --- STAFF DASHBOARD LOGIC ---
+
+/**
+ * Returns orders that are paid but not yet prepared/claimed by any staff.
+ */
+export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
+    const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('payment_status', 'paid')
+        .in('status', [OrderStatusEnum.CONFIRMED, OrderStatusEnum.PENDING])
+        .is('prepared_by', null)
+        .order('created_at', { ascending: true });
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
+/**
+ * Returns orders prepared by the specific staff member that aren't collected yet.
+ */
+export const getStaffMyPreparedOrders = async (staffId: string): Promise<Order[]> => {
+    const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('payment_status', 'paid')
+        .eq('status', OrderStatusEnum.PREPARED)
+        .eq('prepared_by', staffId)
+        .order('prepared_at', { ascending: false });
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
+/**
+ * Claim and mark an order as prepared.
+ */
+export const markOrderAsPrepared = async (orderId: string, staffId: string): Promise<void> => {
+    const { error } = await supabase
+        .from('orders')
+        .update({ 
+            status: OrderStatusEnum.PREPARED,
+            prepared_by: staffId,
+            prepared_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+        // Optimistic check: only update if no one else grabbed it first
+        .is('prepared_by', null);
+        
+    if (error) handleSupabaseError(error, "Mark Prepared");
 };
 
 // --- STUDENT PROFILE (FIXED) ---

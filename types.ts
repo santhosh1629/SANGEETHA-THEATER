@@ -92,6 +92,8 @@ export interface Order {
   seatNumber?: string;
   couponCode?: string;
   discountAmount?: number;
+  preparedBy?: string;
+  preparedAt?: Date;
 }
 
 export interface SalesSummary {

@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, Navigate } from 'react-router-dom';
 import ScanQrPage from './ScanQrPage'; 
-import { getStaffActiveOrders, updateOrderStatus } from '../../services/mockApi';
+import { getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, markOrderAsPrepared, supabase } from '../../services/mockApi';
 import type { Order } from '../../types';
 import { OrderStatus } from '../../types';
 
@@ -28,62 +28,98 @@ const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string }>
     );
 };
 
-const StaffOrderList: React.FC = () => {
-    const [orders, setOrders] = useState<Order[]>([]);
+const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
+    const [activeTab, setActiveTab] = useState<'available' | 'my_prepared'>('available');
+    const [unclaimedOrders, setUnclaimedOrders] = useState<Order[]>([]);
+    const [myPreparedOrders, setMyPreparedOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState<string | null>(null);
 
-    const fetchActive = useCallback(async () => {
+    const fetchData = useCallback(async () => {
         try {
-            const data = await getStaffActiveOrders();
-            setOrders(data);
+            const [unclaimed, myPrepared] = await Promise.all([
+                getStaffUnclaimedPendingOrders(),
+                getStaffMyPreparedOrders(staffId)
+            ]);
+            setUnclaimedOrders(unclaimed);
+            setMyPreparedOrders(myPrepared);
         } catch (e) {
             console.error("Failed to fetch staff orders", e);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [staffId]);
 
     useEffect(() => {
-        fetchActive();
-        const interval = setInterval(fetchActive, 5000);
-        return () => clearInterval(interval);
-    }, [fetchActive]);
+        fetchData();
+        
+        // --- REALTIME SUBSCRIPTION ---
+        // Listen for ANY changes to the orders table to sync state between multiple staff
+        const ordersSubscription = supabase
+            .channel('orders-sync')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+                fetchData();
+            })
+            .subscribe();
 
-    const handleMarkReady = async (orderId: string) => {
-        if (!window.confirm("Mark this order as Prepared and ready for collection?")) return;
+        return () => {
+            supabase.removeChannel(ordersSubscription);
+        };
+    }, [fetchData]);
+
+    const handleClaimAndPrepare = async (orderId: string) => {
         setIsUpdating(orderId);
         try {
-            await updateOrderStatus(orderId, OrderStatus.PREPARED);
-            await fetchActive();
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order is now marked as Prepared!' } }));
+            await markOrderAsPrepared(orderId, staffId);
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order claimed & marked as Prepared!' } }));
+            // Success refetch handled by realtime or immediate call
+            await fetchData();
+            // Optionally switch to my_prepared tab to show it's there
+            setActiveTab('my_prepared');
         } catch (e) {
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to update order status.' } }));
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order. Maybe someone else grabbed it?' } }));
         } finally {
             setIsUpdating(null);
         }
     };
 
-    if (loading && orders.length === 0) return <div className="p-10 text-center animate-pulse text-gray-500 uppercase tracking-widest font-black">Loading orders...</div>;
+    const ordersToDisplay = activeTab === 'available' ? unclaimedOrders : myPreparedOrders;
+
+    if (loading && unclaimedOrders.length === 0 && myPreparedOrders.length === 0) {
+        return <div className="p-10 text-center animate-pulse text-gray-500 uppercase tracking-widest font-black">Loading...</div>;
+    }
 
     return (
         <div className="space-y-4 max-w-2xl mx-auto w-full pb-20">
-            <div className="flex justify-between items-center mb-2 px-2">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                    Live Orders
-                </h3>
-                <span className="text-xs text-gray-500 uppercase font-black tracking-widest">{orders.length} ACTIVE</span>
+            {/* Staff Sub-Tabs */}
+            <div className="flex bg-black/30 p-1 rounded-2xl border border-white/5 mb-6">
+                <button 
+                    onClick={() => setActiveTab('available')}
+                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'available' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                    Available ({unclaimedOrders.length})
+                </button>
+                <button 
+                    onClick={() => setActiveTab('my_prepared')}
+                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'my_prepared' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                    Prepared By Me ({myPreparedOrders.length})
+                </button>
             </div>
 
-            {orders.length === 0 ? (
-                <div className="bg-white/5 border border-dashed border-white/10 rounded-3xl p-12 text-center">
-                    <p className="text-gray-500 font-medium italic">No pending orders found.</p>
+            {ordersToDisplay.length === 0 ? (
+                <div className="bg-white/5 border border-dashed border-white/10 rounded-3xl p-12 text-center animate-pop-in">
+                    <p className="text-4xl mb-4 opacity-30">🍿</p>
+                    <p className="text-gray-500 font-medium italic">
+                        {activeTab === 'available' 
+                            ? 'Great job! No pending orders to prepare right now.' 
+                            : 'You haven\'t prepared any orders in this session.'}
+                    </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 gap-4">
-                    {orders.map(order => (
-                        <div key={order.id} className="bg-gray-800/40 backdrop-blur-md border border-white/5 p-5 rounded-2xl shadow-xl transition-all hover:border-indigo-500/30">
+                    {ordersToDisplay.map(order => (
+                        <div key={order.id} className="bg-gray-800/40 backdrop-blur-md border border-white/5 p-5 rounded-2xl shadow-xl transition-all hover:border-indigo-500/30 animate-fade-in-up">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="space-y-1">
                                     <div className="flex flex-col gap-2">
@@ -91,7 +127,11 @@ const StaffOrderList: React.FC = () => {
                                         <OrderStatusBadge status={order.status} paymentStatus={order.payment_status} />
                                     </div>
                                     <p className="text-lg font-bold text-white uppercase tracking-tight mt-2">{order.studentName}</p>
-                                    <p className="text-[10px] text-gray-500 font-mono">Ordered: {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                    <p className="text-[10px] text-gray-500 font-mono">
+                                        {activeTab === 'available' 
+                                            ? `Ordered: ${new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                            : `Prepared: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                    </p>
                                 </div>
                                 <div className="text-right">
                                     {order.seatNumber ? (
@@ -117,21 +157,19 @@ const StaffOrderList: React.FC = () => {
                                 ))}
                             </div>
 
-                            <div className="flex items-center justify-between gap-4">
-                                {order.status !== OrderStatus.PREPARED ? (
-                                    <button 
-                                        onClick={() => handleMarkReady(order.id)}
-                                        disabled={!!isUpdating}
-                                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-indigo-600/20"
-                                    >
-                                        {isUpdating === order.id ? 'PROCESSING...' : 'MARK AS PREPARED'}
-                                    </button>
-                                ) : (
-                                    <div className="w-full py-4 text-center border-2 border-dashed border-blue-500/30 rounded-xl">
-                                        <p className="text-blue-400 font-bold text-[11px] uppercase tracking-widest">Wait for QR Scan Delivery</p>
-                                    </div>
-                                )}
-                            </div>
+                            {activeTab === 'available' ? (
+                                <button 
+                                    onClick={() => handleClaimAndPrepare(order.id)}
+                                    disabled={!!isUpdating}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-indigo-600/20"
+                                >
+                                    {isUpdating === order.id ? 'CLAIMING...' : 'MARK AS PREPARED'}
+                                </button>
+                            ) : (
+                                <div className="w-full py-4 text-center border-2 border-dashed border-blue-500/30 rounded-xl">
+                                    <p className="text-blue-400 font-bold text-[11px] uppercase tracking-widest">Prepared & Ready for Scan Delivery</p>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -181,7 +219,7 @@ const ScanTerminalHomePage: React.FC = () => {
                             >
                                 <span className="text-4xl block mb-4">📜</span>
                                 <h2 className="text-2xl font-black mb-1 uppercase tracking-tight">Orders</h2>
-                                <p className="text-gray-400 text-sm font-medium">Prepare live orders</p>
+                                <p className="text-gray-400 text-sm font-medium">Claim & prepare live orders</p>
                             </button>
 
                             <button 
@@ -200,7 +238,7 @@ const ScanTerminalHomePage: React.FC = () => {
                             <button onClick={() => setView('dashboard')} className="mb-6 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-indigo-400 flex items-center gap-2 bg-white/5 py-2 px-4 rounded-full w-fit transition-all border border-white/5">
                                 <span className="text-base">←</span> Back
                             </button>
-                            <StaffOrderList />
+                            <StaffOrderList staffId={user?.id || ''} />
                         </div>
                     )}
 
