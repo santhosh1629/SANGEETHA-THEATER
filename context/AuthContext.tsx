@@ -96,13 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initAuth = async () => {
-        // Check session from local storage to persist login state across refreshes
-        // In a full Supabase Auth setup, onAuthStateChange would handle this.
         try {
             const storedUser = localStorage.getItem('current_user');
             if (storedUser) {
                 const parsedUser = JSON.parse(storedUser);
-                // Optionally verify against DB here to ensure user still exists/is valid
                 setUser(parsedUser);
             }
         } catch (error) {
@@ -120,12 +117,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   
   const loginOrRegisterWithPhone = async (phone: string) => {
-    // Quick login for customers: check if exists, if not create
     try {
-        const user = await loginUserApi(phone, phone); // Using phone as password for quick login
+        const user = await loginUserApi(phone, phone); 
         handleAuthSuccess(user);
     } catch (e) {
-        // Not found or invalid password, try registering as new student
         const newUser = await registerUserApi({
             username: `Student ${phone.slice(-4)}`,
             phone: phone,
@@ -166,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phone,
         password,
         role: Role.STUDENT,
-        email: `${phone}@student.com` // Dummy email if not provided
+        email: `${phone}@student.com` 
     });
     return handleAuthSuccess(newUser);
   }, []);
@@ -177,12 +172,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         phone,
         password,
-        canteenName,
-        idProofUrl,
+        canteen_name: canteenName, // Fixed mapping
+        id_proof_url: idProofUrl, // Fixed mapping
         role: Role.CANTEEN_OWNER,
-        approvalStatus: 'pending'
+        approval_status: 'pending' // Fixed mapping for DB insert
     });
-    return newUser; // Don't auto-login pending owners
+    return newUser; 
   }, []);
   
   const registerStaffUser = useCallback(async (name: string, phone: string, password: string): Promise<User> => {
@@ -190,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         username: name,
         phone,
         password,
-        role: Role.CANTEEN_OWNER, // Staff shares role but no canteenName
+        role: Role.CANTEEN_OWNER,
         email: `${phone}@staff.com`
     });
     return newUser;
@@ -211,14 +206,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyOtpAndResetPassword = async (phone: string, otp: string, newPassword: string): Promise<{ message: string }> => {
     if (otp !== '123456') throw new Error("Invalid OTP");
-    
-    // Find user by phone and update password
-    // Since we don't have a direct 'getByPhone' exposed, we rely on login failing or specialized backend logic.
-    // Here we assume we can fetch user by trying to login with old pwd? No.
-    // For this mock/simple setup, we'll try to find the user via supabase query in mockApi (updateUserApi needs ID).
-    // We'll skip implementation details for password reset in this iteration as it requires finding ID by phone first.
-    // Just return success message.
-    
     return { message: "Password reset successfully (Mock)." };
   };
 

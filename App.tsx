@@ -45,6 +45,7 @@ import ScanTerminalHomePage from './pages/owner/ScanTerminalHomePage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ApprovalPage from './pages/admin/ApprovalPage';
 import CommissionPage from './pages/admin/CommissionPage';
+import AdminSalesReportPage from './pages/admin/AdminSalesReportPage';
 
 
 interface ProtectedRouteProps {
@@ -108,7 +109,7 @@ const AppRoutes = () => {
         <Routes>
             <Route path="/" element={<RootRedirect />} />
             
-            {/* Public routes accessible without login */}
+            {/* Public routes */}
             <Route path="/login-owner" element={user ? <Navigate to="/" replace /> : <LoginOwnerPage />} />
             <Route path="/register-owner" element={user ? <Navigate to="/" replace /> : <RegisterOwnerPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -172,6 +173,11 @@ const AppRoutes = () => {
             <Route path="/admin/commissions" element={
                  <ProtectedRoute allowedRoles={[Role.ADMIN]}>
                     <CommissionPage />
+                </ProtectedRoute>
+            } />
+            <Route path="/admin/sales-report" element={
+                 <ProtectedRoute allowedRoles={[Role.ADMIN]}>
+                    <AdminSalesReportPage />
                 </ProtectedRoute>
             } />
 

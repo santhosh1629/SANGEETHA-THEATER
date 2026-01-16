@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import type { Order, MenuItem, SalesSummary, StudentPoints, TodaysDashboardStats, User } from '../../types';
@@ -19,7 +20,7 @@ type DashboardTab = 'live' | 'seats' | 'sales' | 'analytics' | 'management' | 'h
 const DownloadIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
         <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-        <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.1 0 1 0-.708.708l3 3z"/>
     </svg>
 );
 
@@ -135,8 +136,7 @@ const SalesView: React.FC = () => {
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">{order.studentName}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-400">₹{order.totalAmount.toFixed(2)}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-right text-xs text-gray-500">
-                                                        {/* Fix: Property 'deliveredAt' exists on Order, 'collectedAt' does not. */}
-                                                        {order.deliveredAt ? order.deliveredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                                                        {order.deliveredAt ? new Date(order.deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -260,7 +260,6 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: () => void, onVi
         } catch (error) { console.error("Failed to update status:", error); }
     };
     
-    // Sort active orders by timestamp in ascending order (FIFO)
     const activeOrders = useMemo(() => 
         orders
             .filter(o => o.status === OrderStatus.PENDING || o.status === OrderStatus.PREPARED)
@@ -391,15 +390,23 @@ const SeatView: React.FC<{ orders: Order[] }> = ({ orders }) => {
 const AnalyticsView: React.FC<{ salesSummary: SalesSummary; mostSellingItems: { name: string; count: number }[]; orderStatusSummary: { name: string; value: number }[]; }> = ({ salesSummary, mostSellingItems, orderStatusSummary }) => (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3 bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
-            <h3 className="font-bold mb-4 text-gray-200">Weekly Sales (Last 4 Weeks)</h3>
-            <ResponsiveContainer width="100%" height={300}><BarChart data={salesSummary.weekly}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="week" tick={{ fill: '#CBD5E0' }} /><YAxis tick={{ fill: '#CBD5E0' }} /><Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} /><Legend /><Bar dataKey="total" fill="#6366F1" name="Sales (₹)" /></BarChart></ResponsiveContainer>
+            <h3 className="font-bold mb-4 text-gray-200">Daily Sales Trend (Last 14 Days)</h3>
+            <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={salesSummary.daily}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                    <XAxis dataKey="date" tick={{ fill: '#CBD5E0', fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={60} />
+                    <YAxis tick={{ fill: '#CBD5E0' }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} />
+                    <Bar dataKey="total" fill="#6366F1" radius={[4, 4, 0, 0]} name="Daily Sales (₹)" />
+                </BarChart>
+            </ResponsiveContainer>
         </div>
         <div className="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
-            <h3 className="font-bold mb-4 text-gray-200">Order Status</h3>
+            <h3 className="font-bold mb-4 text-gray-200">Order Status Distribution</h3>
             <ResponsiveContainer width="100%" height={300}><PieChart><Pie data={orderStatusSummary} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>{orderStatusSummary.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}</Pie><Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} /><Legend /></PieChart></ResponsiveContainer>
         </div>
         <div className="lg:col-span-5 bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
-            <h3 className="font-bold mb-4 text-gray-200">Most Popular Items</h3>
+            <h3 className="font-bold mb-4 text-gray-200">Top Performing Items</h3>
             <ResponsiveContainer width="100%" height={300}><BarChart data={mostSellingItems} layout="vertical" margin={{ top: 5, right: 20, left: 50, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis type="number" tick={{ fill: '#CBD5E0' }} /><YAxis type="category" dataKey="name" tick={{ fill: '#CBD5E0' }} width={100} /><Tooltip contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }} /><Legend /><Bar dataKey="count" fill="#A78BFA" name="Units Sold" /></BarChart></ResponsiveContainer>
         </div>
     </div>
@@ -556,14 +563,11 @@ export const OwnerDashboard: React.FC = () => {
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
 
-            // Fix: Corrected property name from 'collectedByStaffId' to 'deliveredByStaffId'
             const collectedToday = ordersData.filter(o => o.status === OrderStatus.COLLECTED && new Date(o.timestamp) >= todayStart && o.deliveredByStaffId);
             const scanCounts: { [key: string]: number } = {};
             
             for (const order of collectedToday) {
-                // Fix: Corrected property name from 'collectedByStaffId' to 'deliveredByStaffId'
                 if (order.deliveredByStaffId) {
-                    // Fix: Corrected property name from 'collectedByStaffId' to 'deliveredByStaffId'
                     scanCounts[order.deliveredByStaffId] = (scanCounts[order.deliveredByStaffId] || 0) + 1;
                 }
             }
@@ -571,7 +575,6 @@ export const OwnerDashboard: React.FC = () => {
             const allScanners = user ? [...staffData, user] : staffData;
             
             const staffMap = new Map(allScanners.map(s => {
-                // Fix: Use the full user ID for mapping to ensure accurate leaderboard lookup with UUIDs
                 return [s.id, s.username];
             }));
 
