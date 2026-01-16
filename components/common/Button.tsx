@@ -43,7 +43,7 @@ const Button: React.FC<ButtonProps> = ({
 
     setTimeout(() => {
       setRipples((prev) => prev.filter((r) => r.id !== newRipple.id));
-    }, 600);
+    }, 400); // Faster ripple
   }, []);
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -52,7 +52,7 @@ const Button: React.FC<ButtonProps> = ({
     // Immediate visual feedback
     createRipple(e);
 
-    // Debounce actual click handler to prevent double-submit (300ms)
+    // Debounce actual click handler slightly less (150ms instead of 300ms)
     if (debounceRef.current) return;
     
     if (onClick) {
@@ -62,7 +62,7 @@ const Button: React.FC<ButtonProps> = ({
     // Set a small lockout period
     debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null;
-    }, 300);
+    }, 150);
   };
 
   const getVariantClasses = () => {
@@ -89,7 +89,7 @@ const Button: React.FC<ButtonProps> = ({
         onClick={handleClick}
         disabled={disabled || isLoading}
         className={`
-          relative overflow-hidden font-bold font-heading rounded-xl transition-all duration-100 ease-out
+          relative overflow-hidden font-bold font-heading rounded-xl transition-all duration-75 ease-out
           ${fullWidth ? 'w-full' : ''}
           ${getVariantClasses()}
           ${disabled || isLoading ? 'opacity-60 cursor-not-allowed border-b-0 translate-y-0 shadow-none grayscale' : ''}
@@ -130,7 +130,7 @@ const Button: React.FC<ButtonProps> = ({
       </button>
       <style>{`
         .animate-ripple {
-          animation: ripple 0.6s linear;
+          animation: ripple 0.4s linear;
           position: absolute;
           border-radius: 50%;
           opacity: 1;

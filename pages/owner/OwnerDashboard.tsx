@@ -251,14 +251,8 @@ const StaffScanLeaderboard: React.FC<{ counts: { name: string; count: number }[]
 );
 
 
-const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: () => void, onViewOrder: (order: Order) => void}> = ({ orders, onStatusUpdate, onViewOrder }) => {
+const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string, newStatus: OrderStatus) => Promise<void>, onViewOrder: (order: Order) => void}> = ({ orders, onStatusUpdate, onViewOrder }) => {
     const [showOnlyPending, setShowOnlyPending] = useState(false);
-    const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
-        try {
-            await updateOrderStatus(orderId, newStatus);
-            onStatusUpdate();
-        } catch (error) { console.error("Failed to update status:", error); }
-    };
     
     const activeOrders = useMemo(() => 
         orders
@@ -276,8 +270,7 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: () => void, onVi
                 <div className="flex items-center space-x-2">
                     <label htmlFor="pending-toggle" className="text-sm font-medium text-gray-400 cursor-pointer">Show only pending</label>
                     <button id="pending-toggle" onClick={() => setShowOnlyPending(!showOnlyPending)} className={`${showOnlyPending ? 'bg-indigo-600' : 'bg-gray-600'} relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none`} role="switch" aria-checked={showOnlyPending}>
-                        <span className={`${showOnlyPending ? 'translate-x-6' : 'translate-x-1'} inline-block w-4 h-4 transform bg-white rounded-full transition-transform`}/>
-                    </button>
+                        <span className={`${showOnlyPending ? 'translate-x-6' : 'translate-x-1'} inline-block w-4 h-4 transform bg-white rounded-full transition-transform`}/></button>
                 </div>
             </div>
 
@@ -318,7 +311,7 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: () => void, onVi
                                         <div className="flex items-center justify-end gap-2 flex-wrap">
                                             <button onClick={() => onViewOrder(order)} className="text-indigo-400 hover:text-indigo-300 font-semibold text-xs py-2 px-3 rounded-lg border border-indigo-500 hover:bg-indigo-500/10 transition-colors">View</button>
                                             {order.status === OrderStatus.PENDING && 
-                                                <button onClick={() => handleStatusUpdate(order.id, OrderStatus.PREPARED)} className="bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs hover:bg-blue-700 transition-colors">
+                                                <button onClick={() => onStatusUpdate(order.id, OrderStatus.PREPARED)} className="bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs hover:bg-blue-700 transition-colors">
                                                     Mark as Prepared
                                                 </button>
                                             }
@@ -540,8 +533,9 @@ export const OwnerDashboard: React.FC = () => {
     
     const [loading, setLoading] = useState(true);
 
-    const fetchData = useCallback(async () => {
+    const fetchData = useCallback(async (silent = false) => {
         if (!user) return;
+        if (!silent) setLoading(true);
         try {
             const [
                 ordersData, menuData, salesData, sellingItemsData, statusSummaryData,
@@ -592,29 +586,53 @@ export const OwnerDashboard: React.FC = () => {
     }, [user]);
 
     useEffect(() => {
-        setLoading(true);
         fetchData();
     }, [fetchData]);
     
     useEffect(() => {
         const intervalId = setInterval(() => {
-            fetchData();
+            fetchData(true); // Silent background refresh
         }, 5000); 
         
         return () => clearInterval(intervalId);
     }, [fetchData]);
 
+    const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
+        // --- OPTIMISTIC UI UPDATE ---
+        // Immediately update state so the order moves without waiting for the server
+        setOrders(prevOrders => 
+            prevOrders.map(order => 
+                order.id === orderId ? { ...order, status: newStatus } : order
+            )
+        );
+
+        try {
+            await updateOrderStatus(orderId, newStatus);
+            // Optional: Show a subtle success toast
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order status updated!' } }));
+        } catch (error) { 
+            console.error("Failed to update status:", error);
+            // Rollback on error
+            fetchData(true);
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to update order status. Please try again.' } }));
+        }
+    };
 
     const handleAvailabilityChange = async (itemId: string, isAvailable: boolean) => {
+        // OPTIMISTIC
+        setMenu(prev => prev.map(item => item.id === itemId ? { ...item, isAvailable } : item));
+        
         try {
             await updateMenuAvailability(itemId, isAvailable);
-            setMenu(prev => prev.map(item => item.id === itemId ? { ...item, isAvailable } : item));
-        } catch (error) { console.error("Failed to update menu availability", error); }
+        } catch (error) { 
+            console.error("Failed to update menu availability", error);
+            fetchData(true); // Sync back
+        }
     };
 
     const handleAddStaff = async (details: { name: string, phone: string, password: string }) => {
         await registerStaffUser(details.name, details.phone, details.password);
-        fetchData();
+        fetchData(true);
     };
 
     const handleDeleteStaff = async (userId: string) => {
@@ -625,7 +643,7 @@ export const OwnerDashboard: React.FC = () => {
             await deleteScanTerminalStaff(userId);
             window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Staff removed successfully' } }));
             setStaff(prevStaff => prevStaff.filter(s => s.id !== userId));
-            fetchData();
+            fetchData(true);
         } catch (error) {
             console.error("Error removing staff:", error);
             const msg = error instanceof Error ? error.message : 'Failed to delete. Please try again.';
@@ -727,7 +745,7 @@ export const OwnerDashboard: React.FC = () => {
 
                     {activeTab === 'live' && (
                         <div className="space-y-6 animate-fade-in-down">
-                            <OrdersManager orders={orders} onStatusUpdate={fetchData} onViewOrder={setViewingOrder} />
+                            <OrdersManager orders={orders} onStatusUpdate={handleStatusUpdate} onViewOrder={setViewingOrder} />
                             <StaffScanLeaderboard counts={staffScanCounts} />
                         </div>
                     )}

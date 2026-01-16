@@ -33,7 +33,6 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
     const [unclaimedOrders, setUnclaimedOrders] = useState<Order[]>([]);
     const [myPreparedOrders, setMyPreparedOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isUpdating, setIsUpdating] = useState<string | null>(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -53,8 +52,6 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
     useEffect(() => {
         fetchData();
         
-        // --- REALTIME SUBSCRIPTION ---
-        // Listen for ANY changes to the orders table to sync state between multiple staff
         const ordersSubscription = supabase
             .channel('orders-sync')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
@@ -68,30 +65,32 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
     }, [fetchData]);
 
     const handleClaimAndPrepare = async (orderId: string) => {
-        setIsUpdating(orderId);
+        // --- OPTIMISTIC UI ---
+        const orderToClaim = unclaimedOrders.find(o => o.id === orderId);
+        if (!orderToClaim) return;
+
+        // Move item locally for instant response
+        setUnclaimedOrders(prev => prev.filter(o => o.id !== orderId));
+        setMyPreparedOrders(prev => [{ ...orderToClaim, status: OrderStatus.PREPARED, preparedAt: new Date() }, ...prev]);
+        setActiveTab('my_prepared');
+
         try {
             await markOrderAsPrepared(orderId, staffId);
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order claimed & marked as Prepared!' } }));
-            // Success refetch handled by realtime or immediate call
-            await fetchData();
-            // Optionally switch to my_prepared tab to show it's there
-            setActiveTab('my_prepared');
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order marked as Prepared!' } }));
         } catch (e) {
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order. Maybe someone else grabbed it?' } }));
-        } finally {
-            setIsUpdating(null);
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order. Syncing...' } }));
+            fetchData(); // Rollback/Sync on error
         }
     };
 
     const ordersToDisplay = activeTab === 'available' ? unclaimedOrders : myPreparedOrders;
 
     if (loading && unclaimedOrders.length === 0 && myPreparedOrders.length === 0) {
-        return <div className="p-10 text-center animate-pulse text-gray-500 uppercase tracking-widest font-black">Loading...</div>;
+        return <div className="p-10 text-center text-gray-500 uppercase tracking-widest font-black">Scanning ledger...</div>;
     }
 
     return (
         <div className="space-y-4 max-w-2xl mx-auto w-full pb-20">
-            {/* Staff Sub-Tabs */}
             <div className="flex bg-black/30 p-1 rounded-2xl border border-white/5 mb-6">
                 <button 
                     onClick={() => setActiveTab('available')}
@@ -112,8 +111,8 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
                     <p className="text-4xl mb-4 opacity-30">🍿</p>
                     <p className="text-gray-500 font-medium italic">
                         {activeTab === 'available' 
-                            ? 'Great job! No pending orders to prepare right now.' 
-                            : 'You haven\'t prepared any orders in this session.'}
+                            ? 'No pending orders found.' 
+                            : 'No prepared items in this view.'}
                     </p>
                 </div>
             ) : (
@@ -129,18 +128,18 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
                                     <p className="text-lg font-bold text-white uppercase tracking-tight mt-2">{order.studentName}</p>
                                     <p className="text-[10px] text-gray-500 font-mono">
                                         {activeTab === 'available' 
-                                            ? `Ordered: ${new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                                            : `Prepared: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                            ? `Time: ${new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                            : `Ready: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                                     </p>
                                 </div>
                                 <div className="text-right">
                                     {order.seatNumber ? (
                                         <div className="bg-amber-500 text-black font-black px-4 py-1.5 rounded-xl text-lg shadow-lg shadow-amber-500/20">
-                                            🪑 SEAT {order.seatNumber}
+                                            SEAT {order.seatNumber}
                                         </div>
                                     ) : (
                                         <div className="bg-gray-700 text-gray-400 font-bold px-3 py-1 rounded-lg text-[10px] italic">
-                                            COUNTER PICKUP
+                                            COUNTER
                                         </div>
                                     )}
                                 </div>
@@ -157,18 +156,13 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
                                 ))}
                             </div>
 
-                            {activeTab === 'available' ? (
+                            {activeTab === 'available' && (
                                 <button 
                                     onClick={() => handleClaimAndPrepare(order.id)}
-                                    disabled={!!isUpdating}
                                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-indigo-600/20"
                                 >
-                                    {isUpdating === order.id ? 'CLAIMING...' : 'MARK AS PREPARED'}
+                                    MARK AS PREPARED
                                 </button>
-                            ) : (
-                                <div className="w-full py-4 text-center border-2 border-dashed border-blue-500/30 rounded-xl">
-                                    <p className="text-blue-400 font-bold text-[11px] uppercase tracking-widest">Prepared & Ready for Scan Delivery</p>
-                                </div>
                             )}
                         </div>
                     ))}
@@ -197,9 +191,9 @@ const ScanTerminalHomePage: React.FC = () => {
             <header className="bg-gray-800/80 backdrop-blur-lg border-b border-white/5 p-4 sticky top-0 z-50">
                 <div className="max-w-4xl mx-auto flex justify-between items-center">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-xl shadow-lg shadow-indigo-600/20">S</div>
+                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black text-xl">S</div>
                         <div>
-                            <h1 className="text-lg font-black tracking-tighter leading-tight uppercase">Staff <span className="text-indigo-400">Terminal</span></h1>
+                            <h1 className="text-lg font-black tracking-tighter uppercase leading-tight">Staff <span className="text-indigo-400">Terminal</span></h1>
                             <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{user?.username}</p>
                         </div>
                     </div>
@@ -215,7 +209,7 @@ const ScanTerminalHomePage: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 animate-fade-in-down">
                             <button 
                                 onClick={() => setView('orders')}
-                                className="bg-gray-800 p-8 rounded-[2rem] text-left transition-all border border-white/5 hover:bg-gray-700 shadow-xl hover:-translate-y-1 active:scale-95"
+                                className="bg-gray-800 p-8 rounded-[2rem] text-left transition-all border border-white/5 hover:bg-gray-700 shadow-xl"
                             >
                                 <span className="text-4xl block mb-4">📜</span>
                                 <h2 className="text-2xl font-black mb-1 uppercase tracking-tight">Orders</h2>
@@ -224,7 +218,7 @@ const ScanTerminalHomePage: React.FC = () => {
 
                             <button 
                                 onClick={() => setView('scan')}
-                                className="bg-indigo-600 p-8 rounded-[2rem] text-left transition-all hover:bg-indigo-500 shadow-2xl hover:-translate-y-1 active:scale-95"
+                                className="bg-indigo-600 p-8 rounded-[2rem] text-left transition-all hover:bg-indigo-500 shadow-2xl"
                             >
                                 <span className="text-4xl block mb-4">📸</span>
                                 <h2 className="text-2xl font-black mb-1 uppercase tracking-tight">Scan QR</h2>

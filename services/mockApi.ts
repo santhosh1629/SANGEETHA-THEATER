@@ -16,7 +16,6 @@ const mapUser = (row: any): User => ({
     role: row.role as RoleEnum,
     phone: row.phone,
     email: row.email,
-    password: row.password, 
     canteenName: row.canteen_name,
     approvalStatus: row.approval_status,
     approvalDate: row.created_at, 
@@ -62,6 +61,27 @@ const mapOrder = (row: any): Order => ({
     preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
 });
 
+// Added mapper for bank details
+const mapBankDetails = (row: any): OwnerBankDetails => ({
+    accountNumber: row.account_number || '',
+    bankName: row.bank_name || '',
+    ifscCode: row.ifsc_code || '',
+    upiId: row.upi_id || '',
+    email: row.email || '',
+    phone: row.phone || ''
+});
+
+// Added mapper for commission records
+const mapCommissionRecord = (row: any): CommissionRecord => ({
+    id: row.id,
+    month: row.month,
+    ownerName: row.owner_name,
+    ownerId: row.owner_id,
+    totalIncome: Number(row.total_income),
+    commissionAmount: Number(row.commission_amount),
+    generatedAt: new Date(row.generated_at)
+});
+
 const handleSupabaseError = (error: any, context: string) => {
     let message = error?.message || "Database Connection Error";
     console.error(`[Supabase Error] ${context}:`, message);
@@ -70,24 +90,18 @@ const handleSupabaseError = (error: any, context: string) => {
 
 // --- SALES REPORTING APIS ---
 
-/**
- * Fetch monthly summary and daily list for Admin Sales Report
- * Fetches from the aggregated tables for high performance
- */
 export const getAdminMonthlySalesReport = async (monthKey: string) => {
-    // 1. Fetch Monthly Total
     const { data: monthlyData, error: mError } = await supabase
         .from('monthly_sales')
-        .select('*')
+        .select('month_key, total_sales, total_orders')
         .eq('month_key', monthKey)
         .maybeSingle();
 
     if (mError) handleSupabaseError(mError, "Fetch Monthly Sales");
 
-    // 2. Fetch Daily Breakdown for that month
     const { data: dailyData, error: dError } = await supabase
         .from('daily_sales')
-        .select('*')
+        .select('date_key, month_key, daily_total, daily_orders')
         .eq('month_key', monthKey)
         .order('date_key', { ascending: false });
 
@@ -102,16 +116,14 @@ export const getAdminMonthlySalesReport = async (monthKey: string) => {
 // --- ANALYTICS & STATS ---
 
 export const getTodaysDashboardStats = async (): Promise<TodaysDashboardStats> => {
-    // Get India Date
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     
-    const { data, error } = await supabase
+    const { data } = await supabase
         .from('daily_sales')
         .select('daily_total, daily_orders')
         .eq('date_key', today)
         .maybeSingle();
 
-    // Aggregating items sold still requires scanning today's orders
     const startToday = new Date();
     startToday.setHours(0,0,0,0);
     const { data: orders } = await supabase
@@ -150,7 +162,7 @@ export const getSalesSummary = async (): Promise<SalesSummary> => {
         total: Number(d.daily_total)
     }));
 
-    const { data: mData } = await supabase.from('monthly_sales').select('*').limit(4).order('month_key', { ascending: false });
+    const { data: mData } = await supabase.from('monthly_sales').select('month_key, total_sales').limit(4).order('month_key', { ascending: false });
     const weekly = (mData || []).reverse().map(m => ({ week: m.month_key, total: Number(m.total_sales) }));
 
     return { daily, weekly };
@@ -159,9 +171,9 @@ export const getSalesSummary = async (): Promise<SalesSummary> => {
 // --- AUTH & OTHER APIS ---
 
 export const loginUserApi = async (phoneOrEmail: string, password: string): Promise<User> => {
-    let { data, error } = await supabase.from('users').select('*').eq('phone', phoneOrEmail).eq('password', password).maybeSingle();
+    let { data, error } = await supabase.from('users').select('id, username, role, phone, email, canteen_name, approval_status, created_at, loyalty_points').eq('phone', phoneOrEmail).eq('password', password).maybeSingle();
     if (error || !data) {
-        const res = await supabase.from('users').select('*').eq('email', phoneOrEmail).eq('password', password).maybeSingle();
+        const res = await supabase.from('users').select('id, username, role, phone, email, canteen_name, approval_status, created_at, loyalty_points').eq('email', phoneOrEmail).eq('password', password).maybeSingle();
         data = res.data;
         error = res.error;
     }
@@ -195,7 +207,7 @@ export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
         const { data: favs } = await supabase.from('user_favorites').select('item_id').eq('user_id', studentId);
         if (favs) userFavoriteIds = favs.map(f => f.item_id);
     }
-    const { data, error } = await supabase.from('menu_items').select('*').order('name');
+    const { data, error } = await supabase.from('menu_items').select('id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items').order('name');
     if (error) return [];
     return data.map(item => mapMenuItem(item, userFavoriteIds));
 };
@@ -206,7 +218,7 @@ export const getMenuItemById = async (itemId: string, studentId?: string): Promi
         const { data: fav } = await supabase.from('user_favorites').select('id').eq('user_id', studentId).eq('item_id', itemId).maybeSingle();
         isFavorited = !!fav;
     }
-    const { data, error } = await supabase.from('menu_items').select('*').eq('id', itemId).maybeSingle();
+    const { data, error } = await supabase.from('menu_items').select('id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items').eq('id', itemId).maybeSingle();
     if (error || !data) return null;
     return mapMenuItem(data, isFavorited ? [itemId] : []);
 };
@@ -249,7 +261,7 @@ export const updateOrderPaymentStatus = async (orderId: string, success: boolean
 };
 
 export const getStudentOrders = async (studentId: string): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').eq('student_id', studentId).order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('orders').select('id, student_id, student_name, customer_phone, total_amount, status, payment_status, qr_token, seat_number, items, created_at, payment_success, delivered_at, delivered_by_staff_id, delivered_by_staff_name').eq('student_id', studentId).order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapOrder);
 };
@@ -280,13 +292,13 @@ export const getOrderStatusSummary = async () => {
 };
 
 export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').eq('payment_status', 'paid').in('status', [OrderStatusEnum.CONFIRMED, OrderStatusEnum.PENDING]).is('prepared_by', null).order('created_at', { ascending: true });
+    const { data, error } = await supabase.from('orders').select('id, student_name, total_amount, items, created_at, seat_number, status, payment_status').eq('payment_status', 'paid').in('status', [OrderStatusEnum.CONFIRMED, OrderStatusEnum.PENDING]).is('prepared_by', null).order('created_at', { ascending: true });
     if (error) return [];
     return data.map(mapOrder);
 };
 
 export const getStaffMyPreparedOrders = async (staffId: string): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').eq('payment_status', 'paid').eq('status', OrderStatusEnum.PREPARED).eq('prepared_by', staffId).order('prepared_at', { ascending: false });
+    const { data, error } = await supabase.from('orders').select('id, student_name, items, prepared_at, seat_number, status, payment_status').eq('payment_status', 'paid').eq('status', OrderStatusEnum.PREPARED).eq('prepared_by', staffId).order('prepared_at', { ascending: false });
     if (error) return [];
     return data.map(mapOrder);
 };
@@ -297,7 +309,7 @@ export const markOrderAsPrepared = async (orderId: string, staffId: string): Pro
 };
 
 export const getOwnerOrders = async (): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('orders').select('id, student_name, customer_phone, total_amount, status, seat_number, items, created_at, payment_status, coupon_code, discount_amount').order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapOrder);
 };
@@ -305,7 +317,7 @@ export const getOwnerOrders = async (): Promise<Order[]> => {
 export const getSalesByDate = async (date: string): Promise<Order[]> => {
     const start = new Date(date); start.setHours(0,0,0,0);
     const end = new Date(date); end.setHours(23,59,59,999);
-    const { data, error } = await supabase.from('orders').select('*').gte('created_at', start.toISOString()).lte('created_at', end.toISOString()).eq('payment_status', 'paid');
+    const { data, error } = await supabase.from('orders').select('id, student_name, total_amount, delivered_at').gte('created_at', start.toISOString()).lte('created_at', end.toISOString()).eq('payment_status', 'paid');
     if (error) return [];
     return data.map(mapOrder);
 };
@@ -361,7 +373,7 @@ export const submitFeedback = async (feedback: any): Promise<void> => {
 };
 
 export const getFeedbacks = async (): Promise<Feedback[]> => {
-    const { data, error } = await supabase.from('feedbacks').select('*, menu_items(name)').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('feedbacks').select('id, student_id, student_name, item_id, rating, comment, created_at, menu_items(name)').order('created_at', { ascending: false });
     if (error) return [];
     return data.map(fb => ({ id: fb.id, studentId: fb.student_id, studentName: fb.student_name, itemId: fb.item_id, itemName: fb.menu_items?.name || 'Unknown Item', rating: fb.rating, comment: fb.comment, timestamp: new Date(fb.created_at) }));
 };
@@ -383,7 +395,7 @@ export const updateOrderSeatNumber = async (orderId: string, seatNumber: string)
 };
 
 export const getScanTerminalStaff = async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('users').select('*').eq('role', RoleEnum.CANTEEN_OWNER).is('canteen_name', null);
+    const { data, error } = await supabase.from('users').select('id, username, phone, role').eq('role', RoleEnum.CANTEEN_OWNER).is('canteen_name', null);
     if (error) return [];
     return data.map(mapUser);
 };
@@ -394,7 +406,7 @@ export const deleteScanTerminalStaff = async (userId: string): Promise<void> => 
 };
 
 export const getStaffActiveOrders = async (): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').in('status', [OrderStatusEnum.CONFIRMED, OrderStatusEnum.PREPARED, OrderStatusEnum.PENDING]).eq('payment_status', 'paid').order('created_at', { ascending: true });
+    const { data, error } = await supabase.from('orders').select('id, student_name, items, status, payment_status, created_at').in('status', [OrderStatusEnum.CONFIRMED, OrderStatusEnum.PREPARED, OrderStatusEnum.PENDING]).eq('payment_status', 'paid').order('created_at', { ascending: true });
     if (error) return [];
     return data.map(mapOrder);
 };
@@ -411,10 +423,8 @@ export const verifyQrCodeAndCollectOrder = async (qrToken: string, staffId: stri
     return { ...order, status: OrderStatusEnum.COLLECTED, deliveredByStaffId: staffId, deliveredByStaffName: staff?.username };
 };
 
-export const createPaymentRecord = async (p: any) => {};
-
 export const getUsers = async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('users').select('id, username, role, phone, email, created_at').order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapUser);
 };
@@ -437,7 +447,7 @@ export const getAdminDashboardStats = async (): Promise<AdminStats> => {
 
 export const getPendingOwnerRequests = async (): Promise<User[]> => {
     const { data, error } = await supabase.from('users')
-        .select('*')
+        .select('id, username, phone, email, canteen_name, id_proof_url, created_at, approval_status')
         .eq('role', RoleEnum.CANTEEN_OWNER)
         .eq('approval_status', 'pending')
         .order('created_at', { ascending: true });
@@ -447,7 +457,7 @@ export const getPendingOwnerRequests = async (): Promise<User[]> => {
 
 export const getApprovedOwners = async (): Promise<User[]> => {
     const { data, error } = await supabase.from('users')
-        .select('*')
+        .select('id, username, phone, email, canteen_name, created_at, approval_status, approval_date')
         .eq('role', RoleEnum.CANTEEN_OWNER)
         .eq('approval_status', 'approved')
         .order('created_at', { ascending: false });
@@ -457,7 +467,7 @@ export const getApprovedOwners = async (): Promise<User[]> => {
 
 export const getRejectedOwners = async (): Promise<User[]> => {
     const { data, error } = await supabase.from('users')
-        .select('*')
+        .select('id, username, phone, email, canteen_name, created_at, approval_status')
         .eq('role', RoleEnum.CANTEEN_OWNER)
         .eq('approval_status', 'rejected')
         .order('created_at', { ascending: false });
@@ -479,19 +489,109 @@ export const removeOwnerAccount = async (userId: string): Promise<void> => {
     if (error) handleSupabaseError(error, "Remove Owner Account");
 };
 
-export const getOwnerBankDetails = async (id: string) => ({ accountNumber: '', bankName: '', ifscCode: '', email: '', phone: '' });
-export const requestSaveBankDetailsOtp = async (d: any) => true;
-export const verifyOtpAndSaveBankDetails = async (d: any, o: any, i: any) => d;
-export const getOwnerCommissions = async (id: string) => [];
-export const getAllCommissions = async () => [];
-export const generateMonthlyCommissions = async () => {};
-export const getCanteenPhotos = async () => [];
-export const addCanteenPhoto = async (f: any) => ({ id: '', data: '', uploadedAt: new Date() });
-export const deleteCanteenPhoto = async (id: string) => {};
-export const updateCanteenPhoto = async (id: string, f: any) => ({ id: '', data: '', uploadedAt: new Date() });
 export const getStudentProfile = async (id: string): Promise<StudentProfile> => {
-    const { data: userRow } = await supabase.from('users').select('*').eq('id', id).single();
+    const { data: userRow } = await supabase.from('users').select('username, phone, loyalty_points').eq('id', id).single();
     const { data: orderRows } = await supabase.from('orders').select('total_amount').eq('student_id', id).eq('payment_status', 'paid');
-    const { count: favCount } = await supabase.from('user_favorites').select('*', { count: 'exact', head: true }).eq('user_id', id);
+    const { count: favCount } = await supabase.from('user_favorites').select('id', { count: 'exact', head: true }).eq('user_id', id);
     return { id, name: userRow?.username || 'Customer', phone: userRow?.phone || 'N/A', totalOrders: orderRows?.length || 0, lifetimeSpend: orderRows?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0, favoriteItemsCount: favCount || 0, loyaltyPoints: userRow?.loyalty_points || 0 };
+};
+
+// Fixed: Added missing createPaymentRecord member
+export const createPaymentRecord = async (payment: any) => {
+    const { data, error } = await supabase.from('payments').insert([payment]).select().single();
+    if (error) handleSupabaseError(error, "Payments Insert");
+    return data;
+};
+
+// Fixed: Added missing getOwnerBankDetails member
+export const getOwnerBankDetails = async (ownerId: string): Promise<OwnerBankDetails> => {
+    const { data, error } = await supabase.from('owner_bank_details').select('*').eq('owner_id', ownerId).maybeSingle();
+    if (error) handleSupabaseError(error, "Fetch Bank Details");
+    return data ? mapBankDetails(data) : { accountNumber: '', bankName: '', ifscCode: '', upiId: '', email: '', phone: '' };
+};
+
+// Fixed: Added missing requestSaveBankDetailsOtp member
+export const requestSaveBankDetailsOtp = async (details: OwnerBankDetails) => {
+    // Mock OTP delivery
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return { success: true, message: "OTP sent (Mock: 123456)" };
+};
+
+// Fixed: Added missing verifyOtpAndSaveBankDetails member
+export const verifyOtpAndSaveBankDetails = async (details: OwnerBankDetails, otp: string, ownerId: string): Promise<OwnerBankDetails> => {
+    if (otp !== '123456') throw new Error("Invalid OTP");
+    
+    const dbPayload = {
+        owner_id: ownerId,
+        account_number: details.accountNumber,
+        bank_name: details.bankName,
+        ifsc_code: details.ifscCode,
+        upi_id: details.upiId,
+        email: details.email,
+        phone: details.phone
+    };
+
+    const { data, error } = await supabase.from('owner_bank_details').upsert(dbPayload).select().single();
+    if (error) handleSupabaseError(error, "Bank Details Upsert");
+    return mapBankDetails(data);
+};
+
+// Fixed: Added missing getCanteenPhotos member
+export const getCanteenPhotos = async (): Promise<CanteenPhoto[]> => {
+    const { data, error } = await supabase.from('canteen_photos').select('*').order('uploaded_at', { ascending: false });
+    if (error) return [];
+    return data.map(p => ({ id: p.id, data: p.data, uploadedAt: new Date(p.uploaded_at) }));
+};
+
+// Fixed: Added missing addCanteenPhoto member
+export const addCanteenPhoto = async (file: File): Promise<CanteenPhoto> => {
+    const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+    const { data, error } = await supabase.from('canteen_photos').insert([{ data: base64, uploaded_at: new Date().toISOString() }]).select().single();
+    if (error) handleSupabaseError(error, "Canteen Photos Insert");
+    return { id: data.id, data: data.data, uploadedAt: new Date(data.uploaded_at) };
+};
+
+// Fixed: Added missing deleteCanteenPhoto member
+export const deleteCanteenPhoto = async (id: string): Promise<void> => {
+    const { error } = await supabase.from('canteen_photos').delete().eq('id', id);
+    if (error) handleSupabaseError(error, "Canteen Photos Delete");
+};
+
+// Fixed: Added missing updateCanteenPhoto member
+export const updateCanteenPhoto = async (id: string, file: File): Promise<CanteenPhoto> => {
+    const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+    const { data, error } = await supabase.from('canteen_photos').update({ data: base64 }).eq('id', id).select().single();
+    if (error) handleSupabaseError(error, "Canteen Photos Update");
+    return { id: data.id, data: data.data, uploadedAt: new Date(data.uploaded_at) };
+};
+
+// Fixed: Added missing getOwnerCommissions member
+export const getOwnerCommissions = async (ownerId: string): Promise<CommissionRecord[]> => {
+    const { data, error } = await supabase.from('commissions').select('*').eq('owner_id', ownerId).order('generated_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapCommissionRecord);
+};
+
+// Fixed: Added missing getAllCommissions member
+export const getAllCommissions = async (): Promise<CommissionRecord[]> => {
+    const { data, error } = await supabase.from('commissions').select('*').order('generated_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapCommissionRecord);
+};
+
+// Fixed: Added missing generateMonthlyCommissions member
+export const generateMonthlyCommissions = async () => {
+    // Mock logic for manual calculation trigger
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return { success: true };
 };
