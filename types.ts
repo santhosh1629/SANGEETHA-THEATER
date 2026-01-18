@@ -54,8 +54,11 @@ export interface CartItem extends MenuItem {
 }
 
 export enum OrderStatus {
-  PENDING = 'pending', // Legacy support
-  CONFIRMED = 'Confirmed',
+  INITIATED = 'Initiated',
+  PAYMENT_PENDING = 'Payment Pending',
+  PAYMENT_SUCCESS = 'Payment Success',
+  PAYMENT_FAILED = 'Payment Failed',
+  QR_GENERATED = 'QR Generated',
   PREPARED = 'Prepared',
   DELIVERED = 'Delivered',
   COLLECTED = 'Collected',

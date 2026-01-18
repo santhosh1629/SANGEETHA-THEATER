@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, Navigate } from 'react-router-dom';
@@ -9,8 +8,10 @@ import { OrderStatus } from '../../types';
 
 const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string }> = ({ status, paymentStatus }) => {
     const styles = {
-        [OrderStatus.PENDING]: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50',
-        [OrderStatus.CONFIRMED]: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
+        // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'PAYMENT_PENDING'.
+        [OrderStatus.PAYMENT_PENDING]: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50',
+        // Fix: Property 'CONFIRMED' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
+        [OrderStatus.QR_GENERATED]: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
         [OrderStatus.PREPARED]: 'bg-blue-500/20 text-blue-300 border-blue-500/50',
         [OrderStatus.COLLECTED]: 'bg-green-500/20 text-green-300 border-green-500/50',
         [OrderStatus.DELIVERED]: 'bg-green-500/20 text-green-300 border-green-500/50',

@@ -93,8 +93,28 @@ export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse
             razorpay_signature: razorpayResponse.razorpay_signature
         }
     });
+    
     if (error) return false;
-    return data?.success ?? false;
+    
+    const isSuccess = data?.success ?? false;
+    
+    if (isSuccess) {
+        // Atomic update to Verified & QR Generated
+        const qrToken = `SECURE-ORD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+        await supabase.from('orders').update({
+            payment_success: true,
+            payment_status: 'paid',
+            status: OrderStatusEnum.QR_GENERATED,
+            qr_token: qrToken
+        }).eq('id', orderId);
+    } else {
+        await supabase.from('orders').update({
+            payment_status: 'failed',
+            status: OrderStatusEnum.PAYMENT_FAILED
+        }).eq('id', orderId);
+    }
+    
+    return isSuccess;
 };
 
 // --- CORE MENU & USER API ---
@@ -153,7 +173,18 @@ export const getSalesByDate = async (date: string): Promise<Order[]> => {
 };
 
 export const getOwnerOrders = async (): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    // SECURITY: Dashboard only shows verified orders (QR_GENERATED and above)
+    const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .in('status', [
+            OrderStatusEnum.QR_GENERATED, 
+            OrderStatusEnum.PREPARED, 
+            OrderStatusEnum.COLLECTED, 
+            OrderStatusEnum.DELIVERED
+        ])
+        .order('created_at', { ascending: false });
+        
     if (error) return [];
     return data.map(mapOrder);
 };
@@ -211,8 +242,8 @@ export const placeOrder = async (order: any): Promise<Order> => {
         customer_phone: order.customerPhone, 
         items: order.items, 
         total_amount: Number(order.totalAmount), 
-        status: order.status || OrderStatusEnum.PENDING, 
-        qr_token: `ORD-${Date.now()}`, 
+        status: OrderStatusEnum.INITIATED, // Start as Initiated
+        qr_token: null, // No token until verified
         seat_number: order.seat_number, 
         payment_status: 'created', 
         payment_success: false 
@@ -233,7 +264,8 @@ export const updateOrderStatus = async (orderId: string, status: OrderStatusEnum
 };
 
 export const updateOrderPaymentStatus = async (orderId: string, success: boolean): Promise<void> => {
-    const updates = { payment_success: success, payment_status: success ? 'paid' : 'failed', status: success ? OrderStatusEnum.CONFIRMED : OrderStatusEnum.PENDING };
+    // This is now redundant as verifyRazorpayPaymentApi handles it securely
+    const updates = { payment_success: success, payment_status: success ? 'paid' : 'failed', status: success ? OrderStatusEnum.PAYMENT_SUCCESS : OrderStatusEnum.PAYMENT_FAILED };
     const { error } = await supabase.from('orders').update(updates).eq('id', orderId);
     if (error) handleSupabaseError(error, "Orders Payment Update");
 };
@@ -262,11 +294,22 @@ export const verifyQrCodeAndCollectOrder = async (qrToken: string, staffId: stri
     if (order.status === OrderStatusEnum.COLLECTED) throw new Error("Order already collected.");
     const { data: staffData } = await supabase.from('users').select('username').eq('id', staffId).single();
     await updateOrderStatus(order.id, OrderStatusEnum.COLLECTED, staffId, staffData?.username);
+    
+    // SECURITY: Invalidate token after collection
+    await supabase.from('orders').update({ qr_token: `REDEEMED-${Date.now()}` }).eq('id', order.id);
+    
     return await getOrderById(order.id);
 };
 
 export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').in('status', [OrderStatusEnum.CONFIRMED, OrderStatusEnum.PENDING]).is('prepared_by', null).order('created_at', { ascending: true });
+    // SECURITY: Only show orders with PAYMENT_SUCCESS or QR_GENERATED
+    const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .in('status', [OrderStatusEnum.QR_GENERATED, OrderStatusEnum.PAYMENT_SUCCESS])
+        .is('prepared_by', null)
+        .order('created_at', { ascending: true });
+        
     if (error) return [];
     return data.map(mapOrder);
 };

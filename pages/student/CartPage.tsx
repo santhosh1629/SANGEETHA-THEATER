@@ -68,60 +68,31 @@ const CartPage: React.FC = () => {
 
     const totalAmount = Number(subtotal);
 
-    const finalizeSuccessfulOrder = async (orderId: string, paymentId: string, amount: number) => {
-        try {
-            // STEP 1: Update payment state and mark order as 'Confirmed'
-            // This is the CRITICAL trigger for Owner/Staff visibility
-            await updateOrderPaymentStatus(orderId, true);
-            
-            // STEP 2: Log internal record
-            await createPaymentRecord({
-                order_id: orderId,
-                student_id: user?.id,
-                amount: Number(amount),
-                method: 'Razorpay',
-                status: 'successful',
-                transaction_id: paymentId,
-            });
-            
-            // STEP 3: Cleanup and Redirect
-            updateCart([]);
-            navigate(`/customer/order-success/${orderId}`, { 
-                state: { showSuccessToast: true },
-                replace: true 
-            });
-        } catch (error) {
-            console.error("Database Update Error:", error);
-            window.dispatchEvent(new CustomEvent('show-toast', { 
-                detail: { 
-                    message: `Payment received but database sync failed. Order ID: ${orderId}`, 
-                    type: 'payment-error' 
-                } 
-            }));
-        } finally {
-            setIsPlacingOrder(false);
-        }
-    };
-
     const handlePayment = async (orderId: string, amount: number) => {
         try {
-            // STEP 1: Create Order in Razorpay via Edge Function (Enables Auto-Capture)
             const rzpOrder = await createRazorpayOrderApi(amount, user!.id);
 
             const options = {
                 key: CONFIG.RAZORPAY_KEY_ID, 
                 amount: rzpOrder.amount, 
                 currency: rzpOrder.currency,
-                order_id: rzpOrder.id, // Links the payment to the captured order
+                order_id: rzpOrder.id, 
                 name: CONFIG.APP_NAME,
                 description: "Movie Snacks Payment",
                 image: "/favicon.ico",
                 handler: async (response: any) => {
                     setIsPlacingOrder(true);
-                    // STEP 2: Verify signature on server
+                    
+                    // CRITICAL: Signature Verification happens on Backend
+                    // mockApi.verifyRazorpayPaymentApi calls the Edge Function
                     const isVerified = await verifyRazorpayPaymentApi(orderId, response);
+                    
                     if (isVerified) {
-                        await finalizeSuccessfulOrder(orderId, response.razorpay_payment_id, amount);
+                        updateCart([]);
+                        navigate(`/customer/order-success/${orderId}`, { 
+                            state: { showSuccessToast: true },
+                            replace: true 
+                        });
                     } else {
                         window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Security Verification Failed.', type: 'payment-error' } }));
                         setIsPlacingOrder(false);
@@ -169,19 +140,16 @@ const CartPage: React.FC = () => {
                 })),
                 totalAmount: Number(totalAmount),
                 seat_number: seatNumber.trim(),
-                status: OrderStatus.PENDING 
+                status: OrderStatus.INITIATED // Secure start
             };
             
-            // 1. Create Internal DB Record
             const order = await placeOrder(orderPayload);
-            
-            // 2. Trigger Razorpay Flow
             await handlePayment(order.id, Number(order.totalAmount));
 
         } catch (error: any) {
             console.error("Order Record Failure:", error);
             window.dispatchEvent(new CustomEvent('show-toast', { 
-                detail: { message: "Database Error. Could not create order record.", type: 'payment-error' } 
+                detail: { message: "Failed to initiate order.", type: 'payment-error' } 
             }));
             setIsPlacingOrder(false);
         }
@@ -246,10 +214,8 @@ const CartPage: React.FC = () => {
                         {validationError && <p className="text-red-400 text-sm text-center mt-6 font-bold">{validationError}</p>}
                         
                         <button onClick={handleConfirmOrder} disabled={isPlacingOrder} className="w-full mt-8 bg-primary text-white font-black py-5 px-4 rounded-2xl hover:bg-primary-dark transition-all transform active:scale-95 shadow-xl shadow-primary/20 disabled:opacity-50">
-                            {isPlacingOrder ? 'Creating Order...' : 'Pay with Razorpay'}
+                            {isPlacingOrder ? 'Verifying...' : 'Pay & Verify'}
                         </button>
-                        
-                        <p className="text-[10px] text-center text-textSecondary mt-4 uppercase tracking-widest opacity-50">Secure Payment Gateway</p>
                     </div>
                 </div>
             )}

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
@@ -20,8 +19,10 @@ const saveCartToStorage = (cart: CartItem[]) => {
 
 const getStatusDisplay = (status: OrderStatus) => {
   switch (status) {
-    case OrderStatus.CONFIRMED:
-    case OrderStatus.PENDING:
+    // Fix: Property 'CONFIRMED' does not exist on type 'typeof OrderStatus'. Replaced with 'PAYMENT_SUCCESS'.
+    case OrderStatus.PAYMENT_SUCCESS:
+    // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
+    case OrderStatus.QR_GENERATED:
       return { text: 'Confirmed', icon: '✅', className: 'bg-green-500/20 text-green-300 border-green-400/30' };
     case OrderStatus.PREPARED:
       return { text: 'Ready for Pickup', icon: '🍴', className: 'bg-blue-500/20 text-blue-300 border-blue-400/30' };
@@ -106,7 +107,8 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                             <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border ${statusInfo.className}`}>
                                 {statusInfo.icon} {statusInfo.text}
                             </div>
-                            {(order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.PENDING || order.status === OrderStatus.PREPARED) && (
+                            {/* Fix: Property 'CONFIRMED' and 'PENDING' do not exist on type 'typeof OrderStatus'. Replaced with 'PAYMENT_SUCCESS' and 'QR_GENERATED'. */}
+                            {(order.status === OrderStatus.PAYMENT_SUCCESS || order.status === OrderStatus.QR_GENERATED || order.status === OrderStatus.PREPARED) && (
                                 <div className="mt-4 flex flex-col items-center">
                                     <p className="text-sm text-textSecondary mb-2">Show this QR code at the counter for pickup:</p>
                                     <div className="p-2 bg-white rounded-lg"><QRCodeSVG value={order.qrToken} size={128} /></div>

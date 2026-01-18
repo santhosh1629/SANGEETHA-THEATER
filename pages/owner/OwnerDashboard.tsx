@@ -26,10 +26,13 @@ const DownloadIcon = () => (
 
 const getStatusBadgeClass = (status: OrderStatus) => {
   switch (status) {
-    case OrderStatus.PENDING: return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
-    case OrderStatus.CONFIRMED: return 'bg-indigo-500/40 text-indigo-100 border border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse';
+    case OrderStatus.INITIATED:
+    case OrderStatus.PAYMENT_PENDING: return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
+    case OrderStatus.QR_GENERATED:
+    case OrderStatus.PAYMENT_SUCCESS: return 'bg-indigo-500/40 text-indigo-100 border border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse';
     case OrderStatus.PREPARED: return 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
-    case OrderStatus.COLLECTED: return 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+    case OrderStatus.COLLECTED:
+    case OrderStatus.DELIVERED: return 'bg-green-500/20 text-green-300 border border-green-500/30';
     case OrderStatus.CANCELLED: return 'bg-red-500/20 text-red-300 border border-red-500/30';
     case OrderStatus.SEAT_SELECTED: return 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
     default: return 'bg-gray-500/20 text-gray-300';
@@ -258,8 +261,8 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
     const activeOrders = useMemo(() => 
         orders
             .filter(o => 
-                o.status === OrderStatus.PENDING || 
-                o.status === OrderStatus.CONFIRMED || 
+                o.status === OrderStatus.QR_GENERATED || 
+                o.status === OrderStatus.PAYMENT_SUCCESS || 
                 o.status === OrderStatus.PREPARED
             )
             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), 
@@ -267,7 +270,7 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
     );
 
     const displayedOrders = showOnlyPending 
-        ? activeOrders.filter(o => o.status === OrderStatus.PENDING || o.status === OrderStatus.CONFIRMED) 
+        ? activeOrders.filter(o => o.status === OrderStatus.QR_GENERATED || o.status === OrderStatus.PAYMENT_SUCCESS) 
         : activeOrders;
 
     return (
@@ -317,7 +320,7 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium align-top">
                                         <div className="flex items-center justify-end gap-2 flex-wrap">
                                             <button onClick={() => onViewOrder(order)} className="text-indigo-400 hover:text-indigo-300 font-semibold text-xs py-2 px-3 rounded-lg border border-indigo-500 hover:bg-indigo-500/10 transition-colors">View</button>
-                                            {(order.status === OrderStatus.PENDING || order.status === OrderStatus.CONFIRMED) && 
+                                            {(order.status === OrderStatus.QR_GENERATED || order.status === OrderStatus.PAYMENT_SUCCESS) && 
                                                 <button onClick={() => onStatusUpdate(order.id, OrderStatus.PREPARED)} className="bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs hover:bg-blue-700 transition-colors">
                                                     Mark as Prepared
                                                 </button>
@@ -329,7 +332,7 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
                         </tbody>
                     </table>
                 </div>
-            ) : <p className="text-center text-gray-400 py-4">No active orders right now.</p>}
+            ) : <p className="text-center text-gray-400 py-4">No verified orders ready for preparation.</p>}
         </div>
     );
 };
@@ -565,7 +568,7 @@ export const OwnerDashboard: React.FC = () => {
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
 
-            const collectedToday = ordersData.filter(o => o.status === OrderStatus.COLLECTED && new Date(o.timestamp) >= todayStart && o.deliveredByStaffId);
+            const collectedToday = ordersData.filter(o => (o.status === OrderStatus.COLLECTED || o.status === OrderStatus.DELIVERED) && new Date(o.timestamp) >= todayStart && o.deliveredByStaffId);
             const scanCounts: { [key: string]: number } = {};
             
             for (const order of collectedToday) {
@@ -597,11 +600,9 @@ export const OwnerDashboard: React.FC = () => {
         fetchData();
         
         // --- REAL-TIME LISTENERS ---
-        // Subscribe to changes in the 'orders' table to update the dashboard instantly
         const ordersSubscription = supabase
             .channel('owner-orders-sync')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-                console.log("Real-time order update received. Refreshing dashboard...");
                 fetchData(true); 
             })
             .subscribe();
@@ -615,7 +616,7 @@ export const OwnerDashboard: React.FC = () => {
     useEffect(() => {
         const intervalId = setInterval(() => {
             fetchData(true); // Silent background refresh
-        }, 30000); // Less aggressive polling since we have real-time
+        }, 30000); 
         
         return () => clearInterval(intervalId);
     }, [fetchData]);
@@ -665,7 +666,7 @@ export const OwnerDashboard: React.FC = () => {
     };
     
     const historicalOrders = useMemo(() => 
-        orders.filter(o => o.status === OrderStatus.COLLECTED || o.status === OrderStatus.CANCELLED), 
+        orders.filter(o => o.status === OrderStatus.COLLECTED || o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED), 
     [orders]);
 
     const TabButton: React.FC<{ tab: DashboardTab, label: string, icon?: string }> = ({ tab, label, icon }) => (

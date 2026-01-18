@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
@@ -30,20 +31,17 @@ const TemporaryPopup: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 </div>
                 
                 <h2 className="text-2xl font-black font-heading text-white mt-6 mb-4">
-                    Order Confirmed!
+                    Order Verified!
                 </h2>
                 
                 <div className="space-y-4 text-textPrimary text-sm sm:text-base leading-relaxed">
-                    <p className="font-semibold text-primary/90 text-lg">🎉 Thank you for ordering at Sangeetha Theater!</p>
-                    <p>Your QR Code has been generated successfully ✅</p>
+                    <p className="font-semibold text-primary/90 text-lg">🎉 Payment Confirmed!</p>
+                    <p>Your Pickup QR Code is now live and secured ✅</p>
                     
                     <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-left space-y-1">
                         <p className="text-textSecondary flex gap-2">
                             <span className="flex-shrink-0 text-white">📌</span>
-                            <span>Please save this QR Code to collect your food faster.</span>
-                        </p>
-                        <p className="text-xs text-textSecondary/60 pl-6 italic">
-                            Available anytime in Order History.
+                            <span>Staff can now see your order. Please show the QR at the counter.</span>
                         </p>
                     </div>
                     
@@ -69,7 +67,7 @@ const CompactPermanentBanner: React.FC = () => (
             Please save this QR Code to collect your food faster.
         </p>
         <p className="text-[11px] sm:text-xs text-textSecondary italic mt-1 opacity-70">
-            Available anytime in Order History.
+            Staff will only prepare your food after this step.
         </p>
     </div>
 );
@@ -85,13 +83,6 @@ const OrderSuccessPage: React.FC = () => {
   const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
-    if (location.state?.showSuccessToast) {
-        setShowPopup(true);
-        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Order Confirmed!', type: 'payment-success' } }));
-    }
-  }, [location.state]);
-
-  useEffect(() => {
     const fetchOrder = async () => {
       if (orderId) {
         try {
@@ -102,9 +93,14 @@ const OrderSuccessPage: React.FC = () => {
             setSeatNumber(orderData.seatNumber);
             setSeatSubmitted(true);
           }
+          
+          // Only show popup when transitioning to a "Ready" state
+          if (location.state?.showSuccessToast && (orderData.status === OrderStatus.QR_GENERATED)) {
+              setShowPopup(true);
+              window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Verification Successful!', type: 'payment-success' } }));
+          }
         } catch (error) {
-          const msg = error instanceof Error ? error.message : 'Failed to load order details.';
-          console.error("Order Load Error:", msg);
+          console.error("Order Load Error:", error);
         } finally {
           setLoading(false);
         }
@@ -121,19 +117,23 @@ const OrderSuccessPage: React.FC = () => {
                 if (newStatus !== currentStatus) {
                     setCurrentStatus(newStatus);
                     setOrder(updatedOrder);
+                    
+                    if (newStatus === OrderStatus.QR_GENERATED) {
+                        setShowPopup(true);
+                    }
+                    
                     if (newStatus === OrderStatus.COLLECTED) {
-                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Your food is ready & collected!', type: 'payment-success' } }));
+                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Order Collected!', type: 'payment-success' } }));
                     }
                 }
             } catch (e) {
-                const errorMsg = e instanceof Error ? e.message : 'Polling update check failed.';
-                console.warn(`[Order Polling] status check: ${errorMsg}`);
+                console.warn(`[Order Polling] status check failed.`);
             }
         }, 3000);
 
         return () => clearInterval(intervalId);
     }
-  }, [orderId, currentStatus]);
+  }, [orderId, currentStatus, location.state]);
 
   const handleSeatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,33 +158,31 @@ const OrderSuccessPage: React.FC = () => {
   }
 
   if (!order) {
-    return <div className="text-center text-lg text-red-400 bg-surface/50 backdrop-blur-lg rounded-lg p-8">Could not find your order.</div>;
+    return <div className="text-center text-lg text-red-400 bg-surface/50 backdrop-blur-lg rounded-lg p-8">Order not found.</div>;
   }
 
+  const isVerified = currentStatus !== OrderStatus.INITIATED && currentStatus !== OrderStatus.PAYMENT_PENDING && currentStatus !== OrderStatus.PAYMENT_FAILED;
   const isCollected = currentStatus === OrderStatus.COLLECTED;
-  const showMessages = order.paymentSuccess && !!order.qrToken;
 
   return (
     <div className="max-w-md mx-auto relative min-h-[80vh] flex flex-col justify-center">
-      {/* 1) Celebration Popup - Center Modal with 10s auto-dismiss */}
       <TemporaryPopup isOpen={showPopup} onClose={() => setShowPopup(false)} />
       
       <div className="bg-surface/50 backdrop-blur-lg border border-surface-light p-6 sm:p-8 rounded-3xl shadow-2xl text-textPrimary w-full">
         
         <div className="text-center mb-8">
             <h1 className="text-3xl font-black font-heading text-white drop-shadow-lg">
-                {isCollected ? "Order Collected!" : "Order Success!" }
+                {!isVerified ? "Verifying Payment..." : isCollected ? "Order Collected!" : "Payment Verified!" }
             </h1>
             <p className="text-xs text-textSecondary mt-2 tracking-widest uppercase">
                 Order <span className="font-bold text-primary">#{order.id.slice(-6)}</span>
             </p>
         </div>
 
-        {/* 2) Permanent small message - RENDERED ALWAYS ABOVE ORDER SUMMARY */}
-        {showMessages && <CompactPermanentBanner />}
+        {isVerified && <CompactPermanentBanner />}
 
-        {/* ORDER SUMMARY SECTION */}
-        <div className="animate-slide-in-up" style={{ animationDelay: '100ms' }}>
+        {/* ORDER SUMMARY */}
+        <div className="animate-slide-in-up">
           <h3 className="text-sm font-black font-heading mb-4 text-primary uppercase tracking-[0.2em] border-b border-white/10 pb-2">
             Order Summary
           </h3>
@@ -206,59 +204,61 @@ const OrderSuccessPage: React.FC = () => {
           </div>
         </div>
 
-        {/* QR CODE SECTION */}
-        <div className="mt-10 pt-8 border-t-2 border-dashed border-white/5 flex flex-col items-center animate-fade-in-down" style={{ animationDelay: '200ms' }}>
-          <div className="text-center mb-6">
-              <h2 className="text-xl font-bold font-heading mb-1 text-white">Pickup QR Code</h2>
-              <p className="text-[10px] uppercase tracking-[0.25em] text-textSecondary/50">
-                {isCollected ? "Status: Redeemed" : "Counter Scan Ready"}
-              </p>
-          </div>
-          
-          <div className={`relative p-5 bg-white rounded-[2rem] border-8 border-primary/20 shadow-2xl transition-all ${isCollected ? 'grayscale opacity-30 scale-95' : 'hover:scale-105 active:scale-95 cursor-pointer shadow-primary/20'}`}>
-            <QRCode value={order.qrToken} size={180} fgColor="#1E293B" bgColor="#FFFFFF" />
-            {isCollected && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-[1.5rem]">
-                  <span className="text-black font-black text-3xl -rotate-12 border-4 border-black px-3 py-1">COLLECTED</span>
+        {/* QR CODE SECTION - ONLY AFTER VERIFICATION */}
+        <div className="mt-10 pt-8 border-t-2 border-dashed border-white/5 flex flex-col items-center">
+          {!isVerified ? (
+              <div className="flex flex-col items-center py-10">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-primary mb-4"></div>
+                  <p className="text-sm text-textSecondary font-bold animate-pulse">Checking Gateway Verification...</p>
               </div>
-            )}
-          </div>
+          ) : (
+            <div className="animate-fade-in-down w-full flex flex-col items-center">
+              <div className="text-center mb-6">
+                  <h2 className="text-xl font-bold font-heading mb-1 text-white">Pickup QR Code</h2>
+                  <p className="text-[10px] uppercase tracking-[0.25em] text-textSecondary/50">
+                    {isCollected ? "Status: Redeemed" : "Counter Scan Ready"}
+                  </p>
+              </div>
+              
+              <div className={`relative p-5 bg-white rounded-[2rem] border-8 border-primary/20 shadow-2xl transition-all ${isCollected ? 'grayscale opacity-30 scale-95' : 'hover:scale-105 active:scale-95 cursor-pointer shadow-primary/20'}`}>
+                <QRCode value={order.qrToken} size={180} fgColor="#1E293B" bgColor="#FFFFFF" />
+                {isCollected && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-[1.5rem]">
+                      <span className="text-black font-black text-3xl -rotate-12 border-4 border-black px-3 py-1">COLLECTED</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         
          {/* DINE-IN SERVICE (SEAT NUMBER) */}
-         <div className="mt-10 pt-8 border-t-2 border-dashed border-white/5 animate-pop-in" style={{ animationDelay: '300ms' }}>
-          <h2 className="text-xs font-black font-heading text-center mb-4 text-white/40 uppercase tracking-[0.3em]">Dine-In Service</h2>
-          {seatSubmitted ? (
-              <div className="text-center bg-green-500/5 border border-green-400/20 p-4 rounded-2xl">
-                  <p className="font-bold text-green-400 text-lg">Seat {seatNumber}</p>
-                  <p className="text-[10px] text-green-400/50 mt-1 uppercase tracking-wider font-bold">Staff will deliver to you</p>
-              </div>
-          ) : (
-              <form onSubmit={handleSeatSubmit} className="flex flex-col items-center gap-3">
-                  <input
-                      id="seatNumber"
-                      type="text"
-                      value={seatNumber}
-                      onChange={(e) => setSeatNumber(e.target.value)}
-                      placeholder="Enter Seat (e.g. A12)"
-                      className="w-full text-center text-xl font-black p-4 bg-black/30 border border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-primary transition-all placeholder:text-white/10"
-                      required
-                  />
-                  <button type="submit" className="w-full bg-primary text-background font-black py-4 px-6 rounded-2xl hover:bg-primary-dark transition-all transform active:scale-95 shadow-xl shadow-primary/20">
-                      Confirm Seat
-                  </button>
-              </form>
-          )}
-        </div>
-
-        {/* HELP SECTION */}
-        {order.canteenOwnerPhone && (
-          <div className="mt-10 text-center bg-black/20 p-4 rounded-2xl border border-white/5 animate-slide-in-up" style={{ animationDelay: '400ms' }}>
-              <p className="text-textSecondary/40 text-[10px] uppercase font-black tracking-widest">
-                  Order Support: <a href={`tel:${order.canteenOwnerPhone}`} className="text-primary hover:underline ml-1">📞 {order.canteenOwnerPhone}</a>
-              </p>
-          </div>
-        )}
+         {isVerified && (
+            <div className="mt-10 pt-8 border-t-2 border-dashed border-white/5 animate-pop-in">
+                <h2 className="text-xs font-black font-heading text-center mb-4 text-white/40 uppercase tracking-[0.3em]">Dine-In Service</h2>
+                {seatSubmitted ? (
+                    <div className="text-center bg-green-500/5 border border-green-400/20 p-4 rounded-2xl">
+                        <p className="font-bold text-green-400 text-lg">Seat {seatNumber}</p>
+                        <p className="text-[10px] text-green-400/50 mt-1 uppercase tracking-wider font-bold">Staff will deliver to you</p>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSeatSubmit} className="flex flex-col items-center gap-3">
+                        <input
+                            id="seatNumber"
+                            type="text"
+                            value={seatNumber}
+                            onChange={(e) => setSeatNumber(e.target.value)}
+                            placeholder="Enter Seat (e.g. A12)"
+                            className="w-full text-center text-xl font-black p-4 bg-black/30 border border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-primary transition-all placeholder:text-white/10"
+                            required
+                        />
+                        <button type="submit" className="w-full bg-primary text-background font-black py-4 px-6 rounded-2xl hover:bg-primary-dark transition-all transform active:scale-95 shadow-xl shadow-primary/20">
+                            Confirm Seat
+                        </button>
+                    </form>
+                )}
+            </div>
+         )}
       </div>
     </div>
   );
