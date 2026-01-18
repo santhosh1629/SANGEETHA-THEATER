@@ -10,8 +10,12 @@ import { CONFIG } from '../../config';
 declare const Razorpay: any;
 
 const getCartFromStorage = (): CartItem[] => {
-    const cart = localStorage.getItem('cart');
-    return cart ? JSON.parse(cart) : [];
+    try {
+        const cart = localStorage.getItem('cart');
+        return cart ? JSON.parse(cart) : [];
+    } catch {
+        return [];
+    }
 };
 
 const saveCartToStorage = (cart: CartItem[]) => {
@@ -53,19 +57,25 @@ const CartPage: React.FC = () => {
     };
     
     const handleRemoveItem = (itemId: string) => updateCart(cart.filter(item => item.id !== itemId));
-    const handleNotesChange = (itemId: string, notes: string) => updateCart(cart.map(item => item.id === itemId ? { ...item, notes } : item));
     
-    const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
-    const totalAmount = subtotal;
+    const subtotal = useMemo(() => {
+        return cart.reduce((sum, item) => {
+            const price = Number(item.price) || 0;
+            const qty = Number(item.quantity) || 0;
+            return sum + (price * qty);
+        }, 0);
+    }, [cart]);
 
-    const finalizeSuccessfulOrder = async (orderId: string, paymentId: string) => {
+    const totalAmount = Number(subtotal);
+
+    const finalizeSuccessfulOrder = async (orderId: string, paymentId: string, amount: number) => {
         try {
             await updateOrderPaymentStatus(orderId, true);
             await updateOrderStatus(orderId, OrderStatus.PENDING);
             await createPaymentRecord({
                 order_id: orderId,
                 student_id: user?.id,
-                amount: totalAmount,
+                amount: Number(amount),
                 method: 'Razorpay',
                 status: 'successful',
                 transaction_id: paymentId,
@@ -76,7 +86,7 @@ const CartPage: React.FC = () => {
             console.error("Database Update Error:", error);
             window.dispatchEvent(new CustomEvent('show-toast', { 
                 detail: { 
-                    message: `Payment Received, but DB failed to update. Run the SQL fix!`, 
+                    message: `Payment received but database sync failed. Order ID: ${orderId}`, 
                     type: 'payment-error' 
                 } 
             }));
@@ -85,27 +95,27 @@ const CartPage: React.FC = () => {
         }
     };
 
-    const handlePayment = async (orderId: string) => {
+    const handlePayment = async (orderId: string, amount: number) => {
         try {
-            // 1. Generate real Order ID via Edge Function
-            const rzpOrder = await createRazorpayOrderApi(totalAmount, user!.id);
+            // STEP 1: Create Order in Razorpay via Edge Function (Enables Auto-Capture)
+            const rzpOrder = await createRazorpayOrderApi(amount, user!.id);
 
             const options = {
                 key: CONFIG.RAZORPAY_KEY_ID, 
                 amount: rzpOrder.amount, 
                 currency: rzpOrder.currency,
-                order_id: rzpOrder.id, // THE FIX: This must be the real ID from Razorpay API
+                order_id: rzpOrder.id, // CRITICAL: Links the payment to the captured order
                 name: CONFIG.APP_NAME,
-                description: "Snack Order Payment",
+                description: "Movie Snacks Payment",
                 image: "/favicon.ico",
                 handler: async (response: any) => {
                     setIsPlacingOrder(true);
-                    // 2. Verify signature on backend
+                    // STEP 2: Verify signature on server
                     const isVerified = await verifyRazorpayPaymentApi(orderId, response);
                     if (isVerified) {
-                        await finalizeSuccessfulOrder(orderId, response.razorpay_payment_id);
+                        await finalizeSuccessfulOrder(orderId, response.razorpay_payment_id, amount);
                     } else {
-                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Verification failed.', type: 'payment-error' } }));
+                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Security Verification Failed.', type: 'payment-error' } }));
                         setIsPlacingOrder(false);
                     }
                 },
@@ -118,132 +128,120 @@ const CartPage: React.FC = () => {
                 modal: {
                     ondismiss: () => {
                         setIsPlacingOrder(false);
-                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Payment window closed.', type: 'cart-warn' } }));
                     }
                 }
             };
             
             const rzp = new Razorpay(options);
-            
-            rzp.on('payment.failed', (response: any) => {
-                const errorDesc = response.error?.description || 'Payment Failed';
-                console.error("Razorpay Error Details:", response.error);
-
-                // BYPASS PROMPT FOR PROTOTYPE (Since LIVE Keys block localhost/testing)
-                if (CONFIG.RAZORPAY_KEY_ID.includes('live')) {
-                    if (confirm(`Maachi, Razorpay LIVE Keys require an HTTPS secure domain. \n\nError: ${errorDesc} \n\nWould you like to bypass and simulate success for this demo?`)) {
-                        finalizeSuccessfulOrder(orderId, "MOCK_LIVE_BYPASS_" + Date.now());
-                        return;
-                    }
-                }
-
-                window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `Payment Error: ${errorDesc}`, type: 'payment-error' } }));
-                setIsPlacingOrder(false);
-            });
-
             rzp.open();
-
-        } catch (err) {
-            console.error("Payment Init Catch:", err);
-            if (confirm("Razorpay failed to initialize. \n\nSkip to Success for testing?")) {
-                finalizeSuccessfulOrder(orderId, "INIT_SKIP_" + Date.now());
-            } else {
-                setIsPlacingOrder(false);
-            }
+        } catch (err: any) {
+            console.error("Checkout System Error:", err.message);
+            window.dispatchEvent(new CustomEvent('show-toast', { 
+                detail: { message: `Payment System Unreachable: ${err.message}`, type: 'payment-error' } 
+            }));
+            setIsPlacingOrder(false);
         }
     };
 
     const handleConfirmOrder = async () => {
         if (!user) { promptForPhone(); return; }
-        if (!phoneNumber.trim() || !seatNumber.trim()) { setValidationError('Phone and Seat Number are required.'); return; }
-        if (!/^\d{10}$/.test(phoneNumber)) { setValidationError('Enter a valid 10-digit phone number.'); return; }
+        if (!phoneNumber.trim() || !seatNumber.trim()) { setValidationError('Delivery info required.'); return; }
+        if (!/^\d{10}$/.test(phoneNumber)) { setValidationError('Invalid phone number.'); return; }
         
         setValidationError('');
         setIsPlacingOrder(true);
 
         try {
-            if (user.phone !== phoneNumber) {
-                try { await updateUser({ phone: phoneNumber }); } catch (e) { /* ignore silent fail */ }
-            }
-
             const orderPayload = {
                 studentId: user.id, 
                 studentName: user.username,
                 customerPhone: phoneNumber,
-                items: cart.map(({ id, name, quantity, price, notes, imageUrl }) => ({ id, name, quantity, price, notes, imageUrl })),
-                totalAmount,
+                items: cart.map(({ id, name, quantity, price, notes, imageUrl }) => ({ 
+                    id, name, quantity: Number(quantity), price: Number(price), notes, imageUrl 
+                })),
+                totalAmount: Number(totalAmount),
                 seat_number: seatNumber.trim(),
-                status: OrderStatus.SEAT_SELECTED 
+                status: OrderStatus.PENDING 
             };
             
+            // 1. Create Internal DB Record
             const order = await placeOrder(orderPayload);
-            handlePayment(order.id);
+            
+            // 2. Trigger Razorpay Flow
+            await handlePayment(order.id, Number(order.totalAmount));
 
-        } catch (error) {
-            console.error("Order Creation Error:", error);
-            window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `Order Failed: ${(error as Error).message}`, type: 'payment-error' } }));
+        } catch (error: any) {
+            console.error("Order Record Failure:", error);
+            window.dispatchEvent(new CustomEvent('show-toast', { 
+                detail: { message: "Database Error. Could not create order record.", type: 'payment-error' } 
+            }));
             setIsPlacingOrder(false);
         }
     };
 
-    if (!user) return <div className="text-center py-16 text-textPrimary"><p>Please log in to view your cart.</p></div>;
+    if (!user) return <div className="text-center py-16 text-textPrimary"><p>Please login to continue.</p></div>;
 
     return (
         <div className="text-textPrimary">
-            <h1 className="text-3xl font-bold font-heading mb-6" style={{textShadow: '0 2px 4px rgba(0,0,0,0.5)'}}>
-                Your Cart 🛒
-            </h1>
+            <h1 className="text-3xl font-bold font-heading mb-6">Your Cart 🛒</h1>
             {cart.length === 0 ? (
-                <div className="text-center py-16 bg-surface/50 backdrop-blur-lg border border-surface-light rounded-lg shadow-md">
+                <div className="text-center py-16 bg-surface/50 backdrop-blur-lg border border-surface-light rounded-2xl shadow-lg">
                     <p className="text-xl font-semibold">Your cart is empty.</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-4">
                         {cart.map(item => (
-                            <div key={item.id} className="bg-surface/50 backdrop-blur-lg border border-surface-light rounded-lg p-4 flex gap-4 items-center shadow-md">
-                                <img src={item.imageUrl} alt={item.name} className="w-24 h-24 object-cover rounded-md" />
+                            <div key={item.id} className="bg-surface/50 backdrop-blur-lg border border-surface-light rounded-2xl p-4 flex gap-4 items-center shadow-md">
+                                <img src={item.imageUrl} alt={item.name} className="w-20 h-20 object-cover rounded-xl" />
                                 <div className="flex-grow">
-                                    <h3 className="font-bold font-heading text-lg">{item.name}</h3>
-                                    <p className="font-bold font-heading text-primary">₹{item.price}</p>
-                                    <input
-                                        type="text"
-                                        placeholder="Add notes..."
-                                        value={item.notes || ''}
-                                        onChange={(e) => handleNotesChange(item.id, e.target.value)}
-                                        className="w-full text-sm mt-1 px-2 py-1 border border-white/30 bg-black/30 rounded-md focus:outline-none focus:ring-1 focus:ring-primary text-white"
-                                    />
+                                    <h3 className="font-bold text-lg">{item.name}</h3>
+                                    <p className="font-bold text-primary">₹{item.price}</p>
                                 </div>
                                 <div className="flex flex-col items-end gap-2">
-                                    <div className="flex items-center gap-2 bg-black/30 rounded-full p-1">
-                                        <button onClick={() => handleQuantityChange(item.id, item.quantity - 1)} className="w-6 h-6 rounded-full bg-primary text-white font-bold flex items-center justify-center">-</button>
-                                        <span className="font-bold w-6 text-center">{item.quantity}</span>
-                                        <button onClick={() => handleQuantityChange(item.id, item.quantity + 1)} className="w-6 h-6 rounded-full bg-primary text-white font-bold flex items-center justify-center">+</button>
+                                    <div className="flex items-center gap-3 bg-black/30 rounded-full p-1">
+                                        <button onClick={() => handleQuantityChange(item.id, item.quantity - 1)} className="w-8 h-8 rounded-full bg-primary text-white font-bold">-</button>
+                                        <span className="font-bold w-4 text-center">{item.quantity}</span>
+                                        <button onClick={() => handleQuantityChange(item.id, item.quantity + 1)} className="w-8 h-8 rounded-full bg-primary text-white font-bold">+</button>
                                     </div>
                                     <button onClick={() => handleRemoveItem(item.id)} className="text-xs text-red-400 hover:underline">Remove</button>
                                 </div>
                             </div>
                         ))}
-                        <div className="bg-surface/50 backdrop-blur-lg border border-surface-light rounded-lg p-4 mt-4 shadow-md space-y-4">
-                            <h3 className="font-bold font-heading text-lg">Delivery Details</h3>
-                            <div>
-                                <label className="block text-sm font-semibold text-textSecondary mb-1">Phone Number *</label>
-                                <input type="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} className="w-full px-3 py-2 bg-black/30 border border-white/30 rounded-md text-white" placeholder="10-digit number" required />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-textSecondary mb-1">Seat Number *</label>
-                                <input type="text" value={seatNumber} onChange={e => setSeatNumber(e.target.value)} className="w-full px-3 py-2 bg-black/30 border border-white/30 rounded-md text-white" placeholder="e.g., A12" required />
+                        
+                        <div className="bg-surface/50 border border-surface-light rounded-2xl p-6 shadow-md space-y-4">
+                            <h3 className="font-bold text-lg">Delivery Information</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-textSecondary uppercase mb-1">Phone Number</label>
+                                    <input type="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-xl text-white outline-none focus:ring-2 focus:ring-primary" placeholder="10-digit mobile" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-textSecondary uppercase mb-1">Theater Seat Number</label>
+                                    <input type="text" value={seatNumber} onChange={e => setSeatNumber(e.target.value)} className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-xl text-white outline-none focus:ring-2 focus:ring-primary" placeholder="e.g., Row B - 12" />
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-surface/50 backdrop-blur-xl border border-surface-light rounded-lg p-6 h-fit sticky top-24 shadow-xl">
-                        <h2 className="text-2xl font-bold font-heading mb-4">Summary</h2>
-                        <div className="flex justify-between font-bold font-heading text-xl pt-2 mt-2 border-t border-white/20 text-white"><span>Total</span><span>₹{totalAmount.toFixed(2)}</span></div>
-                        {validationError && <p className="text-red-400 text-sm text-center mt-4">{validationError}</p>}
-                        <button onClick={handleConfirmOrder} disabled={isPlacingOrder} className="w-full mt-6 bg-primary text-white font-bold py-3 px-4 rounded-lg hover:bg-primary-dark transition-colors shadow-lg disabled:opacity-50">
-                            {isPlacingOrder ? 'Processing...' : 'Confirm Order & Pay'}
+                    <div className="bg-surface/50 backdrop-blur-xl border border-surface-light rounded-[2.5rem] p-8 h-fit lg:sticky lg:top-24 shadow-2xl">
+                        <h2 className="text-2xl font-black font-heading mb-6 uppercase">Summary</h2>
+                        <div className="space-y-3 mb-6">
+                            <div className="flex justify-between text-textSecondary"><span>Subtotal</span><span>₹{totalAmount.toFixed(2)}</span></div>
+                            <div className="flex justify-between text-textSecondary"><span>Convenience Fee</span><span className="text-green-400">FREE</span></div>
+                        </div>
+                        <div className="flex justify-between font-black font-heading text-2xl pt-6 border-t border-white/10">
+                            <span>Total</span>
+                            <span className="text-primary">₹{totalAmount.toFixed(2)}</span>
+                        </div>
+                        
+                        {validationError && <p className="text-red-400 text-sm text-center mt-6 font-bold">{validationError}</p>}
+                        
+                        <button onClick={handleConfirmOrder} disabled={isPlacingOrder} className="w-full mt-8 bg-primary text-white font-black py-5 px-4 rounded-2xl hover:bg-primary-dark transition-all transform active:scale-95 shadow-xl shadow-primary/20 disabled:opacity-50">
+                            {isPlacingOrder ? 'Creating Order...' : 'Pay with Razorpay'}
                         </button>
+                        
+                        <p className="text-[10px] text-center text-textSecondary mt-4 uppercase tracking-widest opacity-50">Secure Payment Gateway</p>
                     </div>
                 </div>
             )}
