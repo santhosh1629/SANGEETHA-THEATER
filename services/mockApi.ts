@@ -36,7 +36,7 @@ const mapMenuItem = (row: any, userFavorites: string[] = []): MenuItem => ({
     description: row.description,
     averageRating: row.average_rating ? Number(row.average_rating) : 0,
     favoriteCount: Number(row.favorite_count || 0),
-    isFavorited: userFavorites.includes(row.id),
+    isFavorited: Array.isArray(userFavorites) ? userFavorites.includes(row.id) : false,
     isCombo: row.is_combo,
     comboItems: row.combo_items ? (typeof row.combo_items === 'string' ? JSON.parse(row.combo_items) : row.combo_items) : []
 });
@@ -81,7 +81,6 @@ export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
         const { data: favs } = await supabase.from('user_favorites').select('item_id').eq('user_id', studentId);
         if (favs) userFavoriteIds = favs.map(f => f.item_id);
     }
-    // OPTIMIZED: Select only required fields
     const { data, error } = await supabase.from('menu_items')
         .select(MENU_FIELDS)
         .order('name');
@@ -90,8 +89,6 @@ export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
 };
 
 export const getOwnerOrders = async (): Promise<Order[]> => {
-    // SECURITY: Dashboard only shows verified orders (QR_GENERATED and above)
-    // OPTIMIZED: Select specific fields + use index on status
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS + ', qr_token')
@@ -102,7 +99,7 @@ export const getOwnerOrders = async (): Promise<Order[]> => {
             OrderStatusEnum.DELIVERED
         ])
         .order('created_at', { ascending: false })
-        .limit(50); // Performance cap for live dash
+        .limit(50);
         
     if (error) return [];
     return data.map(mapOrder);
@@ -113,7 +110,6 @@ export const getStudentOrders = async (studentId: string, page: number = 0): Pro
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
-    // OPTIMIZED: Server-side pagination + range filtering
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS + ', qr_token')
@@ -126,7 +122,6 @@ export const getStudentOrders = async (studentId: string, page: number = 0): Pro
 };
 
 export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
-    // OPTIMIZED: Lean query for high-frequency staff screen
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
@@ -152,7 +147,6 @@ export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => 
 };
 
 export const markOrderAsPrepared = async (oId: string, sId: string) => {
-    // OPTIMIZED: Partial update
     const { error } = await supabase.from('orders').update({ 
         status: OrderStatusEnum.PREPARED, 
         prepared_by: sId, 
@@ -583,10 +577,40 @@ export const removeOwnerAccount = async (userId: string) => {
     await supabase.from('users').delete().eq('id', userId);
 };
 
-export const getFoodPopularityStats = async () => {
-    const { data } = await supabase.from('menu_items').select('*');
-    return data ? data.map(mapMenuItem) : [];
+export const getFoodPopularityStats = async (): Promise<MenuItem[]> => {
+    try {
+        // FETCH EVERYTHING TO COMPUTE LIVE POPULARITY
+        const [menuRes, feedbackRes, favoriteRes] = await Promise.all([
+            supabase.from('menu_items').select('*'),
+            supabase.from('feedbacks').select('item_id, rating'),
+            supabase.from('user_favorites').select('item_id')
+        ]);
+
+        if (menuRes.error) throw menuRes.error;
+
+        const feedbacks = feedbackRes.data || [];
+        const favorites = favoriteRes.data || [];
+
+        return menuRes.data.map(item => {
+            const itemFeedbacks = feedbacks.filter(f => f.item_id === item.id);
+            const avgRating = itemFeedbacks.length > 0 
+                ? itemFeedbacks.reduce((sum, f) => sum + Number(f.rating), 0) / itemFeedbacks.length 
+                : 0;
+            
+            const favCount = favorites.filter(fav => fav.item_id === item.id).length;
+
+            return mapMenuItem({
+                ...item,
+                average_rating: avgRating,
+                favorite_count: favCount
+            });
+        });
+    } catch (e) {
+        console.error("Aggregation Error:", e);
+        return [];
+    }
 };
+
 export const getOwnerStatus = async () => ({ isOnline: true });
 export const getOwnerBankDetails = async (id: string) => ({ accountNumber: '', bankName: '', ifscCode: '', upiId: '', email: '', phone: '' });
 export const requestSaveBankDetailsOtp = async (d: any) => ({ success: true });
