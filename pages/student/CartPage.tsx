@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import type { CartItem } from '../../types';
 import { OrderStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { placeOrder, createPaymentRecord, updateOrderStatus, updateOrderPaymentStatus, createRazorpayOrderApi, verifyRazorpayPaymentApi } from '../../services/mockApi';
+// Fix: Removed updateOrderPaymentStatus (not exported), createPaymentRecord and updateOrderStatus (unused)
+import { placeOrder, createRazorpayOrderApi, verifyRazorpayPaymentApi } from '../../services/mockApi';
 import { CONFIG } from '../../config';
 
 declare const Razorpay: any;

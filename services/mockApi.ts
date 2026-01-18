@@ -8,6 +8,10 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// --- OPTIMIZED FIELD SELECTIONS ---
+const MENU_FIELDS = 'id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items';
+const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at';
+
 // --- HELPER MAPPERS ---
 const mapUser = (row: any): User => ({
     id: row.id,
@@ -69,13 +73,95 @@ const mapOrder = (row: any): Order => ({
     preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
 });
 
-const handleSupabaseError = (error: any, context: string) => {
-    let message = error?.message || "Database Connection Error";
-    console.error(`[Supabase Error] ${context}:`, message, error);
-    throw new Error(message);
+// --- CORE MENU & USER API ---
+
+export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
+    let userFavoriteIds: string[] = [];
+    if (studentId) {
+        const { data: favs } = await supabase.from('user_favorites').select('item_id').eq('user_id', studentId);
+        if (favs) userFavoriteIds = favs.map(f => f.item_id);
+    }
+    // OPTIMIZED: Select only required fields
+    const { data, error } = await supabase.from('menu_items')
+        .select(MENU_FIELDS)
+        .order('name');
+    if (error) return [];
+    return data.map(item => mapMenuItem(item, userFavoriteIds));
 };
 
-// --- RAZORPAY EDGE FUNCTION INTEGRATION ---
+export const getOwnerOrders = async (): Promise<Order[]> => {
+    // SECURITY: Dashboard only shows verified orders (QR_GENERATED and above)
+    // OPTIMIZED: Select specific fields + use index on status
+    const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_MINIMAL_FIELDS + ', qr_token')
+        .in('status', [
+            OrderStatusEnum.QR_GENERATED, 
+            OrderStatusEnum.PREPARED, 
+            OrderStatusEnum.COLLECTED, 
+            OrderStatusEnum.DELIVERED
+        ])
+        .order('created_at', { ascending: false })
+        .limit(50); // Performance cap for live dash
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
+export const getStudentOrders = async (studentId: string, page: number = 0): Promise<Order[]> => {
+    const pageSize = 20;
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+
+    // OPTIMIZED: Server-side pagination + range filtering
+    const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_MINIMAL_FIELDS + ', qr_token')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
+export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
+    // OPTIMIZED: Lean query for high-frequency staff screen
+    const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_MINIMAL_FIELDS)
+        .in('status', [OrderStatusEnum.QR_GENERATED, OrderStatusEnum.PAYMENT_SUCCESS])
+        .is('prepared_by', null)
+        .order('created_at', { ascending: true });
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
+export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => {
+    const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_MINIMAL_FIELDS)
+        .eq('status', OrderStatusEnum.PREPARED)
+        .eq('prepared_by', id)
+        .order('prepared_at', { ascending: false })
+        .limit(20);
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
+export const markOrderAsPrepared = async (oId: string, sId: string) => {
+    // OPTIMIZED: Partial update
+    const { error } = await supabase.from('orders').update({ 
+        status: OrderStatusEnum.PREPARED, 
+        prepared_by: sId, 
+        prepared_at: new Date().toISOString() 
+    }).eq('id', oId);
+    if (error) throw error;
+};
+
+// --- REMAINING API WRAPPERS ---
 
 export const createRazorpayOrderApi = async (amount: number, studentId: string) => {
     const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
@@ -99,7 +185,6 @@ export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse
     const isSuccess = data?.success ?? false;
     
     if (isSuccess) {
-        // Atomic update to Verified & QR Generated
         const qrToken = `SECURE-ORD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
         await supabase.from('orders').update({
             payment_success: true,
@@ -117,19 +202,6 @@ export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse
     return isSuccess;
 };
 
-// --- CORE MENU & USER API ---
-
-export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
-    let userFavoriteIds: string[] = [];
-    if (studentId) {
-        const { data: favs } = await supabase.from('user_favorites').select('item_id').eq('user_id', studentId);
-        if (favs) userFavoriteIds = favs.map(f => f.item_id);
-    }
-    const { data, error } = await supabase.from('menu_items').select('*').order('name');
-    if (error) return [];
-    return data.map(item => mapMenuItem(item, userFavoriteIds));
-};
-
 export const addMenuItem = async (item: any, ownerId: string): Promise<MenuItem> => {
     const dbPayload = {
         name: item.name, price: Number(item.price), is_available: !!item.isAvailable,
@@ -137,7 +209,7 @@ export const addMenuItem = async (item: any, ownerId: string): Promise<MenuItem>
         is_combo: !!item.isCombo, combo_items: item.combo_items || [], owner_id: ownerId
     };
     const { data, error } = await supabase.from('menu_items').insert([dbPayload]).select().single();
-    if (error) handleSupabaseError(error, "Menu Items Insert");
+    if (error) throw error;
     return mapMenuItem(data);
 };
 
@@ -148,13 +220,13 @@ export const updateMenuItem = async (itemId: string, item: any): Promise<MenuIte
         is_combo: !!item.isCombo, combo_items: item.combo_items || []
     };
     const { data, error } = await supabase.from('menu_items').update(dbPayload).eq('id', itemId).select().single();
-    if (error) handleSupabaseError(error, "Menu Items Update");
+    if (error) throw error;
     return mapMenuItem(data);
 };
 
 export const removeMenuItem = async (itemId: string): Promise<void> => {
     const { error } = await supabase.from('menu_items').delete().eq('id', itemId);
-    if (error) handleSupabaseError(error, "Menu Items Delete");
+    if (error) throw error;
 };
 
 export const getSalesByDate = async (date: string): Promise<Order[]> => {
@@ -170,23 +242,6 @@ export const getSalesByDate = async (date: string): Promise<Order[]> => {
 
     if (error) return [];
     return data ? data.map(mapOrder) : [];
-};
-
-export const getOwnerOrders = async (): Promise<Order[]> => {
-    // SECURITY: Dashboard only shows verified orders (QR_GENERATED and above)
-    const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .in('status', [
-            OrderStatusEnum.QR_GENERATED, 
-            OrderStatusEnum.PREPARED, 
-            OrderStatusEnum.COLLECTED, 
-            OrderStatusEnum.DELIVERED
-        ])
-        .order('created_at', { ascending: false });
-        
-    if (error) return [];
-    return data.map(mapOrder);
 };
 
 export const getUsers = async (): Promise<User[]> => {
@@ -226,13 +281,13 @@ export const registerUserApi = async (userData: any): Promise<User> => {
         role: userData.role, email: userData.email, canteen_name: userData.canteen_name,
         id_proof_url: userData.id_proof_url, approval_status: userData.approval_status || 'approved'
     }]).select().single();
-    if (error) handleSupabaseError(error, "Users Registration");
+    if (error) throw error;
     return mapUser(data);
 };
 
 export const updateUserApi = async (userId: string, updates: Partial<User>) => {
     const { error } = await supabase.from('users').update(updates).eq('id', userId);
-    if (error) handleSupabaseError(error, "Users Update");
+    if (error) throw error;
 };
 
 export const placeOrder = async (order: any): Promise<Order> => {
@@ -242,13 +297,13 @@ export const placeOrder = async (order: any): Promise<Order> => {
         customer_phone: order.customerPhone, 
         items: order.items, 
         total_amount: Number(order.totalAmount), 
-        status: OrderStatusEnum.INITIATED, // Start as Initiated
-        qr_token: null, // No token until verified
+        status: OrderStatusEnum.INITIATED, 
+        qr_token: null, 
         seat_number: order.seat_number, 
         payment_status: 'created', 
         payment_success: false 
     }]).select().single();
-    if (error) handleSupabaseError(error, "Orders Insert");
+    if (error) throw error;
     return mapOrder(data);
 };
 
@@ -260,14 +315,7 @@ export const updateOrderStatus = async (orderId: string, status: OrderStatusEnum
         if (staffName) updates.delivered_by_staff_name = staffName;
     }
     const { error } = await supabase.from('orders').update(updates).eq('id', orderId);
-    if (error) handleSupabaseError(error, "Orders Status Update");
-};
-
-export const updateOrderPaymentStatus = async (orderId: string, success: boolean): Promise<void> => {
-    // This is now redundant as verifyRazorpayPaymentApi handles it securely
-    const updates = { payment_success: success, payment_status: success ? 'paid' : 'failed', status: success ? OrderStatusEnum.PAYMENT_SUCCESS : OrderStatusEnum.PAYMENT_FAILED };
-    const { error } = await supabase.from('orders').update(updates).eq('id', orderId);
-    if (error) handleSupabaseError(error, "Orders Payment Update");
+    if (error) throw error;
 };
 
 export const getOrderById = async (orderId: string): Promise<Order> => {
@@ -284,7 +332,7 @@ export const getScanTerminalStaff = async (): Promise<User[]> => {
 
 export const deleteScanTerminalStaff = async (id: string) => {
     const { error } = await supabase.from('users').delete().eq('id', id);
-    if (error) handleSupabaseError(error, "Staff Delete");
+    if (error) throw error;
 };
 
 export const verifyQrCodeAndCollectOrder = async (qrToken: string, staffId: string): Promise<Order> => {
@@ -294,35 +342,8 @@ export const verifyQrCodeAndCollectOrder = async (qrToken: string, staffId: stri
     if (order.status === OrderStatusEnum.COLLECTED) throw new Error("Order already collected.");
     const { data: staffData } = await supabase.from('users').select('username').eq('id', staffId).single();
     await updateOrderStatus(order.id, OrderStatusEnum.COLLECTED, staffId, staffData?.username);
-    
-    // SECURITY: Invalidate token after collection
     await supabase.from('orders').update({ qr_token: `REDEEMED-${Date.now()}` }).eq('id', order.id);
-    
     return await getOrderById(order.id);
-};
-
-export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
-    // SECURITY: Only show orders with PAYMENT_SUCCESS or QR_GENERATED
-    const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .in('status', [OrderStatusEnum.QR_GENERATED, OrderStatusEnum.PAYMENT_SUCCESS])
-        .is('prepared_by', null)
-        .order('created_at', { ascending: true });
-        
-    if (error) return [];
-    return data.map(mapOrder);
-};
-
-export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').eq('status', OrderStatusEnum.PREPARED).eq('prepared_by', id).order('prepared_at', { ascending: false });
-    if (error) return [];
-    return data.map(mapOrder);
-};
-
-export const markOrderAsPrepared = async (oId: string, sId: string) => {
-    const { error } = await supabase.from('orders').update({ status: OrderStatusEnum.PREPARED, prepared_by: sId, prepared_at: new Date().toISOString() }).eq('id', oId);
-    if (error) handleSupabaseError(error, "Mark Prepared");
 };
 
 export const getStudentPointsList = async (): Promise<StudentPoints[]> => {
@@ -335,15 +356,13 @@ export const getStudentProfile = async (id: string): Promise<StudentProfile> => 
     const { data: userData, error: userError } = await supabase.from('users').select('*').eq('id', id).single();
     if (userError || !userData) throw new Error("User not found");
 
-    // Fetch orders stats
-    const { data: ordersData, error: ordersError } = await supabase
+    const { data: ordersData } = await supabase
         .from('orders')
         .select('total_amount')
         .eq('student_id', id)
         .eq('payment_status', 'paid');
     
-    // Fetch favorites count
-    const { count: favoritesCount, error: favError } = await supabase
+    const { count: favoritesCount } = await supabase
         .from('user_favorites')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', id);
@@ -360,12 +379,6 @@ export const getStudentProfile = async (id: string): Promise<StudentProfile> => 
         favoriteItemsCount: favoritesCount || 0, 
         loyaltyPoints: userData.loyalty_points || 0 
     };
-};
-
-export const getStudentOrders = async (studentId: string): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*').eq('student_id', studentId).order('created_at', { ascending: false });
-    if (error) return [];
-    return data.map(mapOrder);
 };
 
 export const submitFeedback = async (fb: any) => {
@@ -388,8 +401,6 @@ export const updateAllMenuItemsAvailability = async (ownerId: string, isAvailabl
 export const createPaymentRecord = async (p: any) => {
      await supabase.from('payment_records').insert([p]);
 };
-
-// --- ANALYTICS AND REPORTING ---
 
 export const getTodaysDashboardStats = async (): Promise<TodaysDashboardStats> => {
     const start = new Date(); start.setHours(0, 0, 0, 0);

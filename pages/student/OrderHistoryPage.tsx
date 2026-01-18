@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
@@ -16,12 +17,9 @@ const saveCartToStorage = (cart: CartItem[]) => {
     localStorage.setItem('cart', JSON.stringify(cart));
 };
 
-
 const getStatusDisplay = (status: OrderStatus) => {
   switch (status) {
-    // Fix: Property 'CONFIRMED' does not exist on type 'typeof OrderStatus'. Replaced with 'PAYMENT_SUCCESS'.
     case OrderStatus.PAYMENT_SUCCESS:
-    // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
     case OrderStatus.QR_GENERATED:
       return { text: 'Confirmed', icon: '✅', className: 'bg-green-500/20 text-green-300 border-green-400/30' };
     case OrderStatus.PREPARED:
@@ -107,10 +105,9 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                             <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold border ${statusInfo.className}`}>
                                 {statusInfo.icon} {statusInfo.text}
                             </div>
-                            {/* Fix: Property 'CONFIRMED' and 'PENDING' do not exist on type 'typeof OrderStatus'. Replaced with 'PAYMENT_SUCCESS' and 'QR_GENERATED'. */}
                             {(order.status === OrderStatus.PAYMENT_SUCCESS || order.status === OrderStatus.QR_GENERATED || order.status === OrderStatus.PREPARED) && (
                                 <div className="mt-4 flex flex-col items-center">
-                                    <p className="text-sm text-textSecondary mb-2">Show this QR code at the counter for pickup:</p>
+                                    <p className="text-sm text-textSecondary mb-2">Pickup QR Code:</p>
                                     <div className="p-2 bg-white rounded-lg"><QRCodeSVG value={order.qrToken} size={128} /></div>
                                 </div>
                             )}
@@ -137,6 +134,9 @@ const OrderHistoryPage: React.FC = () => {
     const [orders, setOrders] = useState<Order[]>([]);
     const [menu, setMenu] = useState<MenuItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [page, setPage] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
     const { user, loading: authLoading, promptForPhone } = useAuth();
     const navigate = useNavigate();
     
@@ -146,31 +146,48 @@ const OrderHistoryPage: React.FC = () => {
         }
     }, [user, authLoading, promptForPhone]);
 
-    const fetchOrdersAndMenu = useCallback(async () => {
+    const fetchInitialData = useCallback(async () => {
         if (user) {
             setLoading(true);
             try {
-                const [data, menuData] = await Promise.all([
-                    getStudentOrders(user.id),
+                const [ordersData, menuData] = await Promise.all([
+                    getStudentOrders(user.id, 0),
                     getMenu()
                 ]);
-                setOrders(data);
+                setOrders(ordersData);
                 setMenu(menuData);
+                setHasMore(ordersData.length === 20);
             } catch (error) {
-                console.error("Failed to fetch order history or menu", error);
+                console.error("Failed to fetch order history", error);
             } finally {
                 setLoading(false);
             }
-        } else {
-            setOrders([]);
-            setMenu([]);
-            setLoading(false);
         }
     }, [user]);
 
+    const fetchMoreOrders = async () => {
+        if (!user || loadingMore || !hasMore) return;
+        setLoadingMore(true);
+        const nextPage = page + 1;
+        try {
+            const moreOrders = await getStudentOrders(user.id, nextPage);
+            if (moreOrders.length === 0) {
+                setHasMore(false);
+            } else {
+                setOrders(prev => [...prev, ...moreOrders]);
+                setPage(nextPage);
+                if (moreOrders.length < 20) setHasMore(false);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoadingMore(false);
+        }
+    };
+
     useEffect(() => {
-        fetchOrdersAndMenu();
-    }, [fetchOrdersAndMenu]);
+        fetchInitialData();
+    }, [fetchInitialData]);
     
     const handleReorder = (orderToReorder: Order) => {
         const currentCart = getCartFromStorage();
@@ -179,18 +196,12 @@ const OrderHistoryPage: React.FC = () => {
 
         orderToReorder.items.forEach(orderItem => {
             const fullMenuItem = menu.find(menuItem => menuItem.id === orderItem.id);
-
             if (fullMenuItem && fullMenuItem.isAvailable) {
                 const cartItemIndex = currentCart.findIndex(ci => ci.id === orderItem.id);
                 if (cartItemIndex > -1) {
                     currentCart[cartItemIndex].quantity += orderItem.quantity;
                 } else {
-                    const newCartItem: CartItem = {
-                        ...fullMenuItem,
-                        quantity: orderItem.quantity,
-                        notes: orderItem.notes,
-                    };
-                    currentCart.push(newCartItem);
+                    currentCart.push({ ...fullMenuItem, quantity: orderItem.quantity, notes: orderItem.notes });
                 }
                 itemsAdded++;
             } else {
@@ -202,44 +213,45 @@ const OrderHistoryPage: React.FC = () => {
             saveCartToStorage(currentCart);
             window.dispatchEvent(new CustomEvent('itemAddedToCart'));
             window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `${itemsAdded} item(s) re-added to cart!`, type: 'cart-add' } }));
-            
-            if (unavailableItems.length > 0) {
-                setTimeout(() => window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `Some items were out of stock.`, type: 'stock-out' } })), 500);
-            }
-
             navigate('/customer/cart');
         } else {
              window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'All items are currently out of stock.', type: 'stock-out' } }));
         }
     };
 
-
     if (loading || !user) {
         return (
-            <div>
-                <div className="h-9 bg-surface rounded-lg w-1/2 mb-6 animate-pulse"></div>
-                <div className="space-y-4 animate-pulse">
-                    <div className="h-20 bg-surface rounded-2xl"></div>
-                    <div className="h-20 bg-surface rounded-2xl"></div>
-                    <div className="h-20 bg-surface rounded-2xl"></div>
-                </div>
+            <div className="space-y-4">
+                <div className="h-10 bg-surface rounded-lg w-1/2 mb-6 animate-pulse"></div>
+                {[1, 2, 3].map(i => (
+                    <div key={i} className="h-24 bg-surface rounded-2xl animate-pulse"></div>
+                ))}
             </div>
         );
     }
 
     return (
         <div>
-            <h1 className="text-3xl font-bold font-heading mb-6 text-textPrimary" style={{textShadow: '0 2px 4px rgba(0,0,0,0.5)'}}>Order History 🧾</h1>
+            <h1 className="text-3xl font-bold font-heading mb-6 text-textPrimary">Order History 🧾</h1>
             {orders.length > 0 ? (
-                <div>
+                <div className="pb-10">
                     {orders.map(order => (
                         <OrderCard key={order.id} order={order} onReorder={handleReorder} />
                     ))}
+                    
+                    {hasMore && (
+                        <button 
+                            onClick={fetchMoreOrders}
+                            disabled={loadingMore}
+                            className="w-full py-4 mt-4 bg-surface/40 rounded-xl text-textSecondary font-bold hover:bg-surface-light/50 transition-colors disabled:opacity-50"
+                        >
+                            {loadingMore ? 'Loading more...' : 'Load Older Orders'}
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className="text-center py-16 bg-surface backdrop-blur-lg border border-surface-light rounded-2xl shadow-md">
                     <p className="text-xl font-semibold text-textPrimary">No successful orders yet.</p>
-                    <p className="text-textSecondary mt-2">Orders will appear here once payment is complete.</p>
                 </div>
             )}
         </div>
