@@ -70,8 +70,11 @@ const CartPage: React.FC = () => {
 
     const finalizeSuccessfulOrder = async (orderId: string, paymentId: string, amount: number) => {
         try {
+            // STEP 1: Update payment state and mark order as 'Confirmed'
+            // This is the CRITICAL trigger for Owner/Staff visibility
             await updateOrderPaymentStatus(orderId, true);
-            await updateOrderStatus(orderId, OrderStatus.PENDING);
+            
+            // STEP 2: Log internal record
             await createPaymentRecord({
                 order_id: orderId,
                 student_id: user?.id,
@@ -80,8 +83,13 @@ const CartPage: React.FC = () => {
                 status: 'successful',
                 transaction_id: paymentId,
             });
+            
+            // STEP 3: Cleanup and Redirect
             updateCart([]);
-            navigate(`/customer/order-success/${orderId}`, { state: { showSuccessToast: true } });
+            navigate(`/customer/order-success/${orderId}`, { 
+                state: { showSuccessToast: true },
+                replace: true 
+            });
         } catch (error) {
             console.error("Database Update Error:", error);
             window.dispatchEvent(new CustomEvent('show-toast', { 
@@ -104,7 +112,7 @@ const CartPage: React.FC = () => {
                 key: CONFIG.RAZORPAY_KEY_ID, 
                 amount: rzpOrder.amount, 
                 currency: rzpOrder.currency,
-                order_id: rzpOrder.id, // CRITICAL: Links the payment to the captured order
+                order_id: rzpOrder.id, // Links the payment to the captured order
                 name: CONFIG.APP_NAME,
                 description: "Movie Snacks Payment",
                 image: "/favicon.ico",

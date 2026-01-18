@@ -6,7 +6,7 @@ import { OrderStatus } from '../../types';
 import { 
     getOwnerOrders, updateOrderStatus, getMenu, updateMenuAvailability, getSalesSummary, 
     getMostSellingItems, getOrderStatusSummary, getStudentPointsList, getTodaysDashboardStats, getTodaysDetailedReport,
-    getScanTerminalStaff, deleteScanTerminalStaff, getSalesByDate
+    getScanTerminalStaff, deleteScanTerminalStaff, getSalesByDate, supabase
 } from '../../services/mockApi';
 import { useAuth } from '../../context/AuthContext';
 
@@ -26,11 +26,12 @@ const DownloadIcon = () => (
 
 const getStatusBadgeClass = (status: OrderStatus) => {
   switch (status) {
-    case OrderStatus.PENDING: return 'bg-yellow-500/20 text-yellow-300';
-    case OrderStatus.PREPARED: return 'bg-blue-500/20 text-blue-300';
-    case OrderStatus.COLLECTED: return 'bg-green-500/20 text-green-300';
-    case OrderStatus.CANCELLED: return 'bg-red-500/20 text-red-300';
-    case OrderStatus.SEAT_SELECTED: return 'bg-purple-500/20 text-purple-300';
+    case OrderStatus.PENDING: return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
+    case OrderStatus.CONFIRMED: return 'bg-indigo-500/40 text-indigo-100 border border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse';
+    case OrderStatus.PREPARED: return 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
+    case OrderStatus.COLLECTED: return 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+    case OrderStatus.CANCELLED: return 'bg-red-500/20 text-red-300 border border-red-500/30';
+    case OrderStatus.SEAT_SELECTED: return 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
     default: return 'bg-gray-500/20 text-gray-300';
   }
 };
@@ -256,19 +257,25 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
     
     const activeOrders = useMemo(() => 
         orders
-            .filter(o => o.status === OrderStatus.PENDING || o.status === OrderStatus.PREPARED)
+            .filter(o => 
+                o.status === OrderStatus.PENDING || 
+                o.status === OrderStatus.CONFIRMED || 
+                o.status === OrderStatus.PREPARED
+            )
             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), 
         [orders]
     );
 
-    const displayedOrders = showOnlyPending ? activeOrders.filter(o => o.status === OrderStatus.PENDING) : activeOrders;
+    const displayedOrders = showOnlyPending 
+        ? activeOrders.filter(o => o.status === OrderStatus.PENDING || o.status === OrderStatus.CONFIRMED) 
+        : activeOrders;
 
     return (
         <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h2 className="text-2xl font-bold text-gray-200">Current Orders 🛎️</h2>
                 <div className="flex items-center space-x-2">
-                    <label htmlFor="pending-toggle" className="text-sm font-medium text-gray-400 cursor-pointer">Show only pending</label>
+                    <label htmlFor="pending-toggle" className="text-sm font-medium text-gray-400 cursor-pointer">Show only new/pending</label>
                     <button id="pending-toggle" onClick={() => setShowOnlyPending(!showOnlyPending)} className={`${showOnlyPending ? 'bg-indigo-600' : 'bg-gray-600'} relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none`} role="switch" aria-checked={showOnlyPending}>
                         <span className={`${showOnlyPending ? 'translate-x-6' : 'translate-x-1'} inline-block w-4 h-4 transform bg-white rounded-full transition-transform`}/></button>
                 </div>
@@ -306,11 +313,11 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
                                             ))}
                                         </ul>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap align-top"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeClass(order.status)}`}>{order.status}</span></td>
+                                    <td className="px-6 py-4 whitespace-nowrap align-top"><span className={`px-2 inline-flex text-[10px] leading-5 font-black rounded-full uppercase tracking-wider ${getStatusBadgeClass(order.status)}`}>{order.status}</span></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium align-top">
                                         <div className="flex items-center justify-end gap-2 flex-wrap">
                                             <button onClick={() => onViewOrder(order)} className="text-indigo-400 hover:text-indigo-300 font-semibold text-xs py-2 px-3 rounded-lg border border-indigo-500 hover:bg-indigo-500/10 transition-colors">View</button>
-                                            {order.status === OrderStatus.PENDING && 
+                                            {(order.status === OrderStatus.PENDING || order.status === OrderStatus.CONFIRMED) && 
                                                 <button onClick={() => onStatusUpdate(order.id, OrderStatus.PREPARED)} className="bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs hover:bg-blue-700 transition-colors">
                                                     Mark as Prepared
                                                 </button>
@@ -588,12 +595,27 @@ export const OwnerDashboard: React.FC = () => {
 
     useEffect(() => {
         fetchData();
+        
+        // --- REAL-TIME LISTENERS ---
+        // Subscribe to changes in the 'orders' table to update the dashboard instantly
+        const ordersSubscription = supabase
+            .channel('owner-orders-sync')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+                console.log("Real-time order update received. Refreshing dashboard...");
+                fetchData(true); 
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(ordersSubscription);
+        };
     }, [fetchData]);
     
+    // Fallback interval just in case real-time fails
     useEffect(() => {
         const intervalId = setInterval(() => {
             fetchData(true); // Silent background refresh
-        }, 5000); 
+        }, 30000); // Less aggressive polling since we have real-time
         
         return () => clearInterval(intervalId);
     }, [fetchData]);
