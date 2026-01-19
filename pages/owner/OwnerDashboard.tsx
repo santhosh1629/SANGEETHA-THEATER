@@ -644,10 +644,17 @@ export const OwnerDashboard: React.FC = () => {
             setTodaysStats(todaysStatsData);
             setStaff(staffData);
 
+            // FIX: Calculating staff leaderboard based on delivery time, not order creation time
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
 
-            const collectedToday = ordersData.filter(o => (o.status === OrderStatus.COLLECTED || o.status === OrderStatus.DELIVERED) && new Date(o.timestamp) >= todayStart && o.deliveredByStaffId);
+            const collectedToday = ordersData.filter(o => 
+                (o.status === OrderStatus.COLLECTED || o.status === OrderStatus.DELIVERED) && 
+                o.deliveredAt && 
+                new Date(o.deliveredAt) >= todayStart && 
+                o.deliveredByStaffId
+            );
+
             const scanCounts: { [key: string]: number } = {};
             
             for (const order of collectedToday) {

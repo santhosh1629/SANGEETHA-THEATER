@@ -10,7 +10,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- OPTIMIZED FIELD SELECTIONS ---
 const MENU_FIELDS = 'id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items';
-const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_at';
+// Added delivered_by_staff_id to fields
+const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_by_staff_id, delivered_at';
 
 // --- HELPER MAPPERS ---
 const mapUser = (row: any): User => ({
