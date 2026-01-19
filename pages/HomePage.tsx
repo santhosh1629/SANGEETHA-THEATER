@@ -68,7 +68,7 @@ const CopyrightModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 onClick={(e) => e.stopPropagation()}
             >
                 <p className="text-lg font-semibold">
-                    © 2025 My Canteen
+                    © 2025 Sangeetha Theatre
                 </p>
                 <p className="mt-2 text-sm text-textSecondary">
                     Developed by SANTHOSH P.
@@ -84,7 +84,7 @@ const CopyrightModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 </button>
             </div>
         </div>
-    );
+    );  
 };
 
 

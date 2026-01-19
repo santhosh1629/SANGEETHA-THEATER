@@ -9,8 +9,9 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- OPTIMIZED FIELD SELECTIONS ---
+// Added delivered_by_staff_name and delivered_at to ensure history screen gets this data
 const MENU_FIELDS = 'id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items';
-const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at';
+const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_at';
 
 // --- HELPER MAPPERS ---
 const mapUser = (row: any): User => ({
@@ -73,7 +74,23 @@ const mapOrder = (row: any): Order => ({
     preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
 });
 
-// --- CORE MENU & USER API ---
+export const getStudentOrders = async (studentId: string, page: number = 0): Promise<Order[]> => {
+    const pageSize = 20;
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+
+    // STRICT REQUIREMENT: Only show orders with 'paid' status in History
+    const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_MINIMAL_FIELDS)
+        .eq('student_id', studentId)
+        .eq('payment_status', 'paid') // Hard server-side filter
+        .order('created_at', { ascending: false })
+        .range(from, to);
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
 
 export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
     let userFavoriteIds: string[] = [];
@@ -91,7 +108,7 @@ export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
 export const getOwnerOrders = async (): Promise<Order[]> => {
     const { data, error } = await supabase
         .from('orders')
-        .select(ORDER_MINIMAL_FIELDS + ', qr_token')
+        .select(ORDER_MINIMAL_FIELDS)
         .in('status', [
             OrderStatusEnum.QR_GENERATED, 
             OrderStatusEnum.PREPARED, 
@@ -100,22 +117,6 @@ export const getOwnerOrders = async (): Promise<Order[]> => {
         ])
         .order('created_at', { ascending: false })
         .limit(50);
-        
-    if (error) return [];
-    return data.map(mapOrder);
-};
-
-export const getStudentOrders = async (studentId: string, page: number = 0): Promise<Order[]> => {
-    const pageSize = 20;
-    const from = page * pageSize;
-    const to = from + pageSize - 1;
-
-    const { data, error } = await supabase
-        .from('orders')
-        .select(ORDER_MINIMAL_FIELDS + ', qr_token')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false })
-        .range(from, to);
         
     if (error) return [];
     return data.map(mapOrder);
@@ -154,8 +155,6 @@ export const markOrderAsPrepared = async (oId: string, sId: string) => {
     }).eq('id', oId);
     if (error) throw error;
 };
-
-// --- REMAINING API WRAPPERS ---
 
 export const createRazorpayOrderApi = async (amount: number, studentId: string) => {
     const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
@@ -579,7 +578,6 @@ export const removeOwnerAccount = async (userId: string) => {
 
 export const getFoodPopularityStats = async (): Promise<MenuItem[]> => {
     try {
-        // FETCH EVERYTHING TO COMPUTE LIVE POPULARITY
         const [menuRes, feedbackRes, favoriteRes] = await Promise.all([
             supabase.from('menu_items').select('*'),
             supabase.from('feedbacks').select('item_id, rating'),
