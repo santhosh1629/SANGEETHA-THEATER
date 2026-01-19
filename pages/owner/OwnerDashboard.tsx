@@ -24,21 +24,6 @@ const DownloadIcon = () => (
     </svg>
 );
 
-const getStatusBadgeClass = (status: OrderStatus) => {
-  switch (status) {
-    case OrderStatus.INITIATED:
-    case OrderStatus.PAYMENT_PENDING: return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
-    case OrderStatus.QR_GENERATED:
-    case OrderStatus.PAYMENT_SUCCESS: return 'bg-indigo-500/40 text-indigo-100 border border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse';
-    case OrderStatus.PREPARED: return 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
-    case OrderStatus.COLLECTED:
-    case OrderStatus.DELIVERED: return 'bg-green-500/20 text-green-300 border border-green-500/30';
-    case OrderStatus.CANCELLED: return 'bg-red-500/20 text-red-300 border border-red-500/30';
-    case OrderStatus.SEAT_SELECTED: return 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
-    default: return 'bg-gray-500/20 text-gray-300';
-  }
-};
-
 const PIE_COLORS = ['#fbbf24', '#60a5fa', '#4ade80']; // amber-400, blue-400, green-400
 
 // --- Tab Components ---
@@ -67,7 +52,6 @@ const SalesView: React.FC = () => {
 
     const totalRevenue = useMemo(() => salesOrders.reduce((sum, o) => sum + o.totalAmount, 0), [salesOrders]);
     
-    // Get month and year for display
     const dateObj = new Date(selectedDate);
     const monthYear = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
@@ -256,73 +240,93 @@ const StaffScanLeaderboard: React.FC<{ counts: { name: string; count: number }[]
 
 
 const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string, newStatus: OrderStatus) => Promise<void>, onViewOrder: (order: Order) => void}> = ({ orders, onStatusUpdate, onViewOrder }) => {
-    const [showOnlyPending, setShowOnlyPending] = useState(false);
-    
-    const activeOrders = useMemo(() => 
+    // REQUIREMENT: Strict filtering logic for LIVE view
+    const currentActiveOrders = useMemo(() => 
         orders
             .filter(o => 
-                o.status === OrderStatus.QR_GENERATED || 
-                o.status === OrderStatus.PAYMENT_SUCCESS || 
-                o.status === OrderStatus.PREPARED
+                (o.payment_status === 'paid' || o.paymentSuccess) && 
+                o.status !== OrderStatus.COLLECTED && 
+                o.status !== OrderStatus.DELIVERED &&
+                o.status !== OrderStatus.CANCELLED
             )
             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), 
         [orders]
     );
 
-    const displayedOrders = showOnlyPending 
-        ? activeOrders.filter(o => o.status === OrderStatus.QR_GENERATED || o.status === OrderStatus.PAYMENT_SUCCESS) 
-        : activeOrders;
-
     return (
         <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                <h2 className="text-2xl font-bold text-gray-200">Current Orders 🛎️</h2>
-                <div className="flex items-center space-x-2">
-                    <label htmlFor="pending-toggle" className="text-sm font-medium text-gray-400 cursor-pointer">Show only new/pending</label>
-                    <button id="pending-toggle" onClick={() => setShowOnlyPending(!showOnlyPending)} className={`${showOnlyPending ? 'bg-indigo-600' : 'bg-gray-600'} relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none`} role="switch" aria-checked={showOnlyPending}>
-                        <span className={`${showOnlyPending ? 'translate-x-6' : 'translate-x-1'} inline-block w-4 h-4 transform bg-white rounded-full transition-transform`}/></button>
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-200">Current Orders 🛎️</h2>
+                    <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-bold">Showing Paid & Not Collected Only</p>
+                </div>
+                <div className="bg-indigo-600/10 border border-indigo-500/20 px-4 py-2 rounded-xl">
+                    <span className="text-indigo-400 font-black">{currentActiveOrders.length} ORDERS PENDING</span>
                 </div>
             </div>
 
-            {displayedOrders.length > 0 ? (
+            {currentActiveOrders.length > 0 ? (
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-700">
                         <thead className="bg-gray-700/50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Order ID</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Items</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Order Details</th>
+                                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Customer</th>
+                                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Verification Status</th>
+                                <th className="px-6 py-3 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-gray-800 divide-y divide-gray-700">
-                            {displayedOrders.map(order => (
-                                <tr key={order.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">...{order.id.slice(-6)}</td>
+                            {currentActiveOrders.map(order => (
+                                <tr key={order.id} className="hover:bg-gray-700/20 transition-colors">
+                                    <td className="px-6 py-4 whitespace-nowrap align-top">
+                                        <div className="font-black text-indigo-400 font-heading">#{order.id.slice(-6).toUpperCase()}</div>
+                                        <div className="text-[10px] text-gray-500 font-bold mt-1 uppercase">
+                                            {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        <div className="mt-2 text-sm text-gray-300">
+                                            {order.items.map(i => (
+                                                <div key={i.id} className="flex gap-2">
+                                                    <span className="font-bold text-white">x{i.quantity}</span>
+                                                    <span>{i.name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm align-top">
-                                        <div className="font-medium text-gray-200">{order.studentName}</div>
-                                        {order.customerPhone && <div className="text-gray-400">{order.customerPhone}</div>}
+                                        <div className="font-bold text-gray-200">{order.studentName}</div>
+                                        {order.customerPhone && <div className="text-xs text-gray-400">{order.customerPhone}</div>}
                                         {order.seatNumber && (
-                                            <div className="mt-1 font-bold text-lg text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md inline-block">
-                                                🪑 Seat: {order.seatNumber}
+                                            <div className="mt-2 font-black text-sm text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20 inline-block">
+                                                🪑 SEAT {order.seatNumber}
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-normal text-sm text-gray-400 align-top">
-                                        <ul className="list-disc list-inside space-y-1">
-                                            {order.items.map(i => (
-                                                <li key={i.id}>{i.name} (x{i.quantity}) {i.notes && <span className="block text-xs text-indigo-400 italic pl-2">Note: {i.notes}</span>}</li>
-                                            ))}
-                                        </ul>
+                                    <td className="px-6 py-4 whitespace-nowrap align-top space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-1 rounded-md font-black border border-green-500/30 uppercase">
+                                                PAID ✅
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-1 rounded-md font-black border border-red-500/30 uppercase animate-pulse">
+                                                NOT COLLECTED ❌
+                                            </span>
+                                        </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap align-top"><span className={`px-2 inline-flex text-[10px] leading-5 font-black rounded-full uppercase tracking-wider ${getStatusBadgeClass(order.status)}`}>{order.status}</span></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium align-top">
-                                        <div className="flex items-center justify-end gap-2 flex-wrap">
-                                            <button onClick={() => onViewOrder(order)} className="text-indigo-400 hover:text-indigo-300 font-semibold text-xs py-2 px-3 rounded-lg border border-indigo-500 hover:bg-indigo-500/10 transition-colors">View</button>
-                                            {(order.status === OrderStatus.QR_GENERATED || order.status === OrderStatus.PAYMENT_SUCCESS) && 
-                                                <button onClick={() => onStatusUpdate(order.id, OrderStatus.PREPARED)} className="bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs hover:bg-blue-700 transition-colors">
-                                                    Mark as Prepared
+                                        <div className="flex items-center justify-end gap-3">
+                                            <div className="text-right mr-2">
+                                                <p className="font-black text-white">₹{order.totalAmount.toFixed(0)}</p>
+                                                <p className="text-[10px] text-gray-500 uppercase font-bold">Total</p>
+                                            </div>
+                                            <button onClick={() => onViewOrder(order)} className="bg-gray-700 text-gray-300 hover:text-white font-bold text-xs py-2 px-4 rounded-xl border border-gray-600 transition-all">Details</button>
+                                            {order.status !== OrderStatus.PREPARED && 
+                                                <button 
+                                                    onClick={() => onStatusUpdate(order.id, OrderStatus.PREPARED)} 
+                                                    className="bg-indigo-600 text-white font-black py-2 px-4 rounded-xl text-xs hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
+                                                >
+                                                    Start Preparing
                                                 </button>
                                             }
                                         </div>
@@ -332,7 +336,13 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
                         </tbody>
                     </table>
                 </div>
-            ) : <p className="text-center text-gray-400 py-4">No verified orders ready for preparation.</p>}
+            ) : (
+                <div className="py-20 text-center bg-gray-900/30 rounded-[2rem] border-2 border-dashed border-gray-700">
+                    <p className="text-5xl mb-4 grayscale opacity-30">🍿</p>
+                    <p className="text-gray-500 font-bold uppercase tracking-widest">All caught up!</p>
+                    <p className="text-gray-600 text-sm mt-1 italic">Waiting for new verified orders...</p>
+                </div>
+            )}
         </div>
     );
 };
@@ -359,7 +369,6 @@ const SeatView: React.FC<{ orders: Order[] }> = ({ orders }) => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Order ID</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Items Summary</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Total</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                             </tr>
                         </thead>
                         <tbody className="bg-gray-800 divide-y divide-gray-700">
@@ -375,11 +384,6 @@ const SeatView: React.FC<{ orders: Order[] }> = ({ orders }) => {
                                         {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-200">₹{order.totalAmount.toFixed(2)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeClass(order.status)}`}>
-                                            {order.status}
-                                        </span>
-                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -432,11 +436,87 @@ const OrderHistoryView: React.FC<{ orders: Order[] }> = ({ orders }) => {
     const [filter, setFilter] = useState<'all' | OrderStatus>('all');
     const filteredOrders = useMemo(() => filter === 'all' ? orders : orders.filter(o => o.status === filter), [orders, filter]);
 
+    const getBadge = (status: OrderStatus) => {
+        switch(status) {
+            case OrderStatus.COLLECTED:
+            case OrderStatus.DELIVERED:
+                return 'bg-green-500/20 text-green-300 border border-green-500/30';
+            case OrderStatus.CANCELLED:
+                return 'bg-red-500/20 text-red-300 border border-red-500/30';
+            default:
+                return 'bg-gray-500/20 text-gray-300 border border-gray-500/20';
+        }
+    }
+
     return (
         <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
-            <h3 className="font-bold mb-4 text-gray-200">Completed/Cancelled Orders</h3>
-            <div className="mb-4"><select value={filter} onChange={e => setFilter(e.target.value as any)} className="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2"><option value="all">All</option><option value={OrderStatus.COLLECTED}>Collected</option><option value={OrderStatus.CANCELLED}>Cancelled</option></select></div>
-            <div className="overflow-x-auto max-h-[60vh] scrollbar-thin pr-2">{filteredOrders.length > 0 ? <table className="min-w-full divide-y divide-gray-700"><thead className="bg-gray-700/50 sticky top-0"><tr><th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Order ID</th><th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Customer</th><th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Date</th><th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Status</th><th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Total</th></tr></thead><tbody className="bg-gray-800 divide-y divide-gray-700">{filteredOrders.map(order => (<tr key={order.id}><td className="px-4 py-2 text-sm text-gray-400">...{order.id.slice(-6)}</td><td className="px-4 py-2 text-sm text-gray-200">{order.studentName}</td><td className="px-4 py-2 text-sm text-gray-400">{new Date(order.timestamp).toLocaleDateString()}</td><td className="px-4 py-2"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeClass(order.status)}`}>{order.status}</span></td><td className="px-4 py-2 text-sm font-semibold text-gray-200">₹{(order.totalAmount || 0).toFixed(2)}</td></tr>))}</tbody></table> : <p className="text-center text-gray-400 py-4">No historical orders found.</p>}</div>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h3 className="font-black text-xl text-gray-200 uppercase tracking-tight">Order Audit Log 📜</h3>
+                <div className="flex items-center gap-3">
+                    <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Filter</label>
+                    <select 
+                        value={filter} 
+                        onChange={e => setFilter(e.target.value as any)} 
+                        className="bg-gray-700 border border-gray-600 text-white text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 p-2 outline-none"
+                    >
+                        <option value="all">Full History</option>
+                        <option value={OrderStatus.COLLECTED}>Collected Only</option>
+                        <option value={OrderStatus.CANCELLED}>Cancelled Only</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div className="overflow-x-auto max-h-[60vh] scrollbar-thin pr-2">
+                {filteredOrders.length > 0 ? (
+                    <table className="min-w-full divide-y divide-gray-700">
+                        <thead className="bg-gray-700/50 sticky top-0">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Receipt</th>
+                                <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Customer</th>
+                                <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Items</th>
+                                <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
+                                <th className="px-4 py-3 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-gray-800 divide-y divide-gray-700">
+                            {filteredOrders.map(order => (
+                                <tr key={order.id} className="hover:bg-gray-700/20 transition-colors">
+                                    <td className="px-4 py-4 align-top">
+                                        <div className="font-black text-xs text-indigo-400">#{order.id.slice(-6).toUpperCase()}</div>
+                                        <div className="text-[10px] text-gray-500 font-bold mt-1 uppercase">
+                                            {new Date(order.timestamp).toLocaleDateString()}
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-4 align-top">
+                                        <div className="font-bold text-gray-200 text-sm">{order.studentName}</div>
+                                        {order.deliveredByStaffName && (
+                                            <div className="text-[10px] text-indigo-300 font-bold mt-1 uppercase">
+                                                By: {order.deliveredByStaffName}
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-4 align-top text-[11px] text-gray-400">
+                                        {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
+                                    </td>
+                                    <td className="px-4 py-4 align-top">
+                                        <span className={`px-2 py-1 text-[10px] font-black rounded-md uppercase tracking-tighter border ${getBadge(order.status)}`}>
+                                            {order.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-4 align-top text-right text-sm font-black text-white">
+                                        ₹{(order.totalAmount || 0).toFixed(0)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <div className="py-20 text-center bg-gray-900/30 rounded-[2rem] border-2 border-dashed border-gray-700">
+                        <p className="text-4xl mb-4 opacity-20">🌫️</p>
+                        <p className="text-gray-500 font-bold uppercase tracking-widest">No matching logs</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -545,7 +625,6 @@ export const OwnerDashboard: React.FC = () => {
 
     const fetchData = useCallback(async (silent = false) => {
         if (!user) return;
-        // Don't show full screen spinner if we already have data
         if (!silent && orders.length === 0) setLoading(true);
         try {
             const [
@@ -599,7 +678,6 @@ export const OwnerDashboard: React.FC = () => {
     useEffect(() => {
         fetchData();
         
-        // --- REAL-TIME LISTENERS ---
         const ordersSubscription = supabase
             .channel('owner-orders-sync')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
@@ -611,18 +689,8 @@ export const OwnerDashboard: React.FC = () => {
             supabase.removeChannel(ordersSubscription);
         };
     }, [fetchData]);
-    
-    // Fallback interval just in case real-time fails
-    useEffect(() => {
-        const intervalId = setInterval(() => {
-            fetchData(true); // Silent background refresh
-        }, 30000); 
-        
-        return () => clearInterval(intervalId);
-    }, [fetchData]);
 
     const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
-        // --- OPTIMISTIC UI UPDATE ---
         setOrders(prevOrders => 
             prevOrders.map(order => 
                 order.id === orderId ? { ...order, status: newStatus } : order

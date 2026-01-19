@@ -9,7 +9,6 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- OPTIMIZED FIELD SELECTIONS ---
-// Added delivered_by_staff_name and delivered_at to ensure history screen gets this data
 const MENU_FIELDS = 'id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items';
 const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_at';
 
@@ -74,17 +73,30 @@ const mapOrder = (row: any): Order => ({
     preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
 });
 
+export const getOwnerOrders = async (): Promise<Order[]> => {
+    // FIX: Removed strict status filters so both LIVE and HISTORY data is fetched
+    // We only filter for PAID or CANCELLED orders to avoid cluttering with failed attempts
+    const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_MINIMAL_FIELDS)
+        .or(`payment_status.eq.paid,status.eq.${OrderStatusEnum.CANCELLED}`)
+        .order('created_at', { ascending: false })
+        .limit(100);
+        
+    if (error) return [];
+    return data.map(mapOrder);
+};
+
 export const getStudentOrders = async (studentId: string, page: number = 0): Promise<Order[]> => {
     const pageSize = 20;
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
-    // STRICT REQUIREMENT: Only show orders with 'paid' status in History
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
         .eq('student_id', studentId)
-        .eq('payment_status', 'paid') // Hard server-side filter
+        .eq('payment_status', 'paid') 
         .order('created_at', { ascending: false })
         .range(from, to);
         
@@ -103,23 +115,6 @@ export const getMenu = async (studentId?: string): Promise<MenuItem[]> => {
         .order('name');
     if (error) return [];
     return data.map(item => mapMenuItem(item, userFavoriteIds));
-};
-
-export const getOwnerOrders = async (): Promise<Order[]> => {
-    const { data, error } = await supabase
-        .from('orders')
-        .select(ORDER_MINIMAL_FIELDS)
-        .in('status', [
-            OrderStatusEnum.QR_GENERATED, 
-            OrderStatusEnum.PREPARED, 
-            OrderStatusEnum.COLLECTED, 
-            OrderStatusEnum.DELIVERED
-        ])
-        .order('created_at', { ascending: false })
-        .limit(50);
-        
-    if (error) return [];
-    return data.map(mapOrder);
 };
 
 export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
@@ -333,9 +328,13 @@ export const verifyQrCodeAndCollectOrder = async (qrToken: string, staffId: stri
     if (findError || !orderData) throw new Error("Invalid QR code.");
     const order = mapOrder(orderData);
     if (order.status === OrderStatusEnum.COLLECTED) throw new Error("Order already collected.");
+    
     const { data: staffData } = await supabase.from('users').select('username').eq('id', staffId).single();
+    
     await updateOrderStatus(order.id, OrderStatusEnum.COLLECTED, staffId, staffData?.username);
+    
     await supabase.from('orders').update({ qr_token: `REDEEMED-${Date.now()}` }).eq('id', order.id);
+    
     return await getOrderById(order.id);
 };
 
