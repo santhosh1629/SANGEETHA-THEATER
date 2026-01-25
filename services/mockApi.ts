@@ -10,7 +10,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- OPTIMIZED FIELD SELECTIONS ---
 const MENU_FIELDS = 'id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items';
-// Added delivered_by_staff_id to fields
 const ORDER_MINIMAL_FIELDS = 'id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_by_staff_id, delivered_at';
 
 // --- HELPER MAPPERS ---
@@ -75,8 +74,6 @@ const mapOrder = (row: any): Order => ({
 });
 
 export const getOwnerOrders = async (): Promise<Order[]> => {
-    // FIX: Removed strict status filters so both LIVE and HISTORY data is fetched
-    // We only filter for PAID or CANCELLED orders to avoid cluttering with failed attempts
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
@@ -152,24 +149,35 @@ export const markOrderAsPrepared = async (oId: string, sId: string) => {
     if (error) throw error;
 };
 
-export const createRazorpayOrderApi = async (amount: number, studentId: string) => {
-    const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
-        body: { amount, studentId }
+// --- UPDATED: NATIVE FETCH FOR EDGE FUNCTIONS ---
+const invokeEdgeFunction = async (name: string, payload: any) => {
+    const response = await fetch(`https://hhaddkpolzczqnchmrjt.functions.supabase.co/${name}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify(payload)
     });
-    if (error) throw new Error(`Edge Function Error: ${error.message}`);
-    return data; 
+    
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.error || `Edge Function Error: ${response.statusText}`);
+    }
+    return result;
+};
+
+export const createRazorpayOrderApi = async (amount: number, studentId: string) => {
+    return await invokeEdgeFunction('create-razorpay-order', { amount, studentId });
 };
 
 export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse: any) => {
-    const { data, error } = await supabase.functions.invoke('verify-razorpay-payment', {
-        body: { 
-            razorpay_order_id: razorpayResponse.razorpay_order_id,
-            razorpay_payment_id: razorpayResponse.razorpay_payment_id,
-            razorpay_signature: razorpayResponse.razorpay_signature
-        }
+    const data = await invokeEdgeFunction('verify-razorpay-payment', { 
+        razorpay_order_id: razorpayResponse.razorpay_order_id,
+        razorpay_payment_id: razorpayResponse.razorpay_payment_id,
+        razorpay_signature: razorpayResponse.razorpay_signature
     });
-    
-    if (error) return false;
     
     const isSuccess = data?.success ?? false;
     
