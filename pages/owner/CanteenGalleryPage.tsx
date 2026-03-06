@@ -2,11 +2,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getCanteenPhotos, addCanteenPhoto, deleteCanteenPhoto, updateCanteenPhoto } from '../../services/mockApi';
 import type { CanteenPhoto } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 const ReplaceIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5" /></svg>);
 const DeleteIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>);
 
 const CanteenGalleryPage: React.FC = () => {
+    const { user } = useAuth();
     const [photos, setPhotos] = useState<CanteenPhoto[]>([]);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -21,15 +23,16 @@ const CanteenGalleryPage: React.FC = () => {
 
 
     const fetchPhotos = useCallback(async () => {
+        if (!user) return;
         try {
             // No need to set loading true here if it's just for refresh
-            const data = await getCanteenPhotos();
+            const data = await getCanteenPhotos(user.id);
             setPhotos(data);
         } catch (err) {
             console.error("Failed to fetch canteen photos", err);
             setError("Could not load photo gallery.");
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         setLoading(true);
@@ -55,14 +58,14 @@ const CanteenGalleryPage: React.FC = () => {
 
     const handleAddPhoto = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedFile) {
+        if (!selectedFile || !user) {
             setError('Please select an image file to upload.');
             return;
         }
         setIsSubmitting(true);
         setError('');
         try {
-            const newPhoto = await addCanteenPhoto(selectedFile);
+            const newPhoto = await addCanteenPhoto(selectedFile, user.id);
             setPhotos(prev => [newPhoto, ...prev]);
             setSelectedFile(null);
             setPreviewUrl(null);
@@ -94,9 +97,9 @@ const CanteenGalleryPage: React.FC = () => {
 
     const handleReplaceFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file && replacingPhotoId) {
+        if (file && replacingPhotoId && user) {
             try {
-                const updatedPhoto = await updateCanteenPhoto(replacingPhotoId, file);
+                const updatedPhoto = await updateCanteenPhoto(replacingPhotoId, file, user.id);
                 setPhotos(prev => prev.map(p => p.id === updatedPhoto.id ? updatedPhoto : p));
             } catch (err) {
                 console.error("Failed to replace photo", err);

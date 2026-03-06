@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAllOffersForOwner, createOffer, updateOffer, deleteOffer } from '../../services/mockApi';
 import type { Offer } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 type FormState = Omit<Offer, 'id' | 'isUsed' | 'studentId' | 'isReward' | 'redeemedCount'>;
 
@@ -60,6 +61,7 @@ const OfferCard: React.FC<{ offer: Offer; onEdit: (offer: Offer) => void; onDele
 
 
 const OffersPage: React.FC = () => {
+    const { user } = useAuth();
     const [offers, setOffers] = useState<Offer[]>([]);
     const [loading, setLoading] = useState(true);
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -73,14 +75,15 @@ const OffersPage: React.FC = () => {
     const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
 
     const fetchOffers = useCallback(async () => {
+        if (!user) return;
         try {
-            const data = await getAllOffersForOwner();
+            const data = await getAllOffersForOwner(user.id);
             setOffers(data);
         } catch (err) {
             console.error("Failed to fetch offers", err);
             setError("Could not load offers data.");
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         setLoading(true);
@@ -145,6 +148,7 @@ const OffersPage: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        if (!user) return;
         if (!formData.code || !formData.description || formData.discountValue <= 0 || (formData.usageCount || 0) < 1) {
             setError("All fields are required. Discount and Usage Count must be positive.");
             return;
@@ -154,7 +158,7 @@ const OffersPage: React.FC = () => {
             if (editingOffer) {
                 await updateOffer(editingOffer.id, payload);
             } else {
-                await createOffer(payload);
+                await createOffer(payload, user.id);
             }
             fetchOffers();
             handleCloseFormModal();

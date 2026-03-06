@@ -6,7 +6,7 @@
 
 export const CONFIG = {
     // Your Live Public Key
-    RAZORPAY_KEY_ID: 'rzp_live_S0V6Bz1xXIWsbn',
+    RAZORPAY_KEY_ID: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_S0V6Bz1xXIWsbn',
     
     // Feature Toggles
     USE_EDGE_FUNCTIONS: true, 

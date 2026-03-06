@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAllRewardsForOwner, createReward, updateReward, deleteReward } from '../../services/mockApi';
 import type { Reward } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 type FormState = Omit<Reward, 'id'>;
 
@@ -72,6 +73,7 @@ const RewardCard: React.FC<{ reward: Reward; onEdit: (reward: Reward) => void; o
 );
 
 const RewardsManagementPage: React.FC = () => {
+    const { user } = useAuth();
     const [rewards, setRewards] = useState<Reward[]>([]);
     const [loading, setLoading] = useState(true);
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -85,14 +87,15 @@ const RewardsManagementPage: React.FC = () => {
     const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
 
     const fetchRewards = useCallback(async () => {
+        if (!user) return;
         try {
-            const data = await getAllRewardsForOwner();
+            const data = await getAllRewardsForOwner(user.id);
             setRewards(data);
         } catch (err) {
             console.error("Failed to fetch rewards", err);
             setError("Could not load rewards data.");
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         setLoading(true);
@@ -151,6 +154,7 @@ const RewardsManagementPage: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        if (!user) return;
         if (!formData.title || formData.pointsCost <= 0 || formData.discount.value <= 0) {
             setError("Title, and positive point/discount values are required.");
             return;
@@ -160,7 +164,7 @@ const RewardsManagementPage: React.FC = () => {
             if (editingReward) {
                 await updateReward(editingReward.id, payload);
             } else {
-                await createReward(payload);
+                await createReward(payload, user.id);
             }
             fetchRewards();
             handleCloseFormModal();

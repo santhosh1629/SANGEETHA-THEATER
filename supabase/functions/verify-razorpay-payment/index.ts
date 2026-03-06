@@ -1,50 +1,97 @@
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts"
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+async function hmacSHA256(secret: string, message: string) {
+  const enc = new TextEncoder();
+  const keyData = enc.encode(secret);
+  const msgData = enc.encode(message);
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
+
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
+Deno.serve(async (req) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await req.json()
-    const KEY_SECRET = 'aleVqiBaaVo8ZatFBmWQS1vV' 
-    
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      throw new Error("Missing verification details.");
+    // ✅ CORS
+    if (req.method === "OPTIONS") {
+      return new Response("ok", {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Headers":
+            "authorization, x-client-info, apikey, content-type",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+        },
+      });
     }
 
-    // Verify HMAC SHA256 Signature
-    const data = razorpay_order_id + "|" + razorpay_payment_id
-    const encoder = new TextEncoder()
-    const keyData = encoder.encode(KEY_SECRET)
-    const key = await crypto.subtle.importKey(
-      "raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-    )
-    
-    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(data))
-    const generated_signature = Array.from(new Uint8Array(signatureBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")
+    // ✅ Read body
+    const body = await req.json();
+    const razorpay_order_id = body.razorpay_order_id;
+    const razorpay_payment_id = body.razorpay_payment_id;
+    const razorpay_signature = body.razorpay_signature;
 
-    const isSuccess = generated_signature === razorpay_signature
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return new Response(JSON.stringify({ error: "missing fields" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // ✅ Get secret from env
+    const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+    if (!keySecret) {
+      return new Response(
+        JSON.stringify({ error: "Missing RAZORPAY_KEY_SECRET in Supabase env" }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
+    // ✅ Verify signature
+    const payload = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const expectedSig = await hmacSHA256(keySecret, payload);
+
+    const isValid = expectedSig === razorpay_signature;
 
     return new Response(
-      JSON.stringify({ success: isSuccess }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-    )
-  } catch (error: any) {
-    console.error("Verification Error:", error.message)
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-    )
+      JSON.stringify({
+        success: isValid,
+        message: isValid ? "Payment verified ✅" : "Invalid signature ❌",
+      }),
+      {
+        status: isValid ? 200 : 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
-})
+});
