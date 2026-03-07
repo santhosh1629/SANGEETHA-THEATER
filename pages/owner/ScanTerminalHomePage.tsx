@@ -69,23 +69,47 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
         const orderToClaim = unclaimedOrders.find(o => o.id === orderId);
         if (!orderToClaim) return;
 
+        // --- OPTIMISTIC UI UPDATE ---
+        // Instantly move the order to the other tab to avoid "Prepared By Me (0)" confusion
+        const optimisticOrder: Order = { 
+            ...orderToClaim, 
+            status: OrderStatus.PREPARING, 
+            preparedBy: staffId, 
+            preparedByName: staffName,
+            preparedAt: new Date() 
+        };
+
+        setUnclaimedOrders(prev => prev.filter(o => o.id !== orderId));
+        setMyPreparedOrders(prev => {
+            // Avoid duplicates if fetchData already returned it
+            if (prev.some(o => o.id === orderId)) return prev;
+            return [optimisticOrder, ...prev];
+        });
+        setActiveTab('my_prepared');
+
         try {
             await markOrderAsPreparing(orderId, staffId, staffName);
             window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order assigned to you!' } }));
-            fetchData();
-            setActiveTab('my_prepared');
+            
+            // Wait a tiny bit for DB consistency before re-fetching
+            setTimeout(() => fetchData(), 500);
         } catch (e) {
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order.' } }));
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order. Syncing...' } }));
+            fetchData(); // Rollback to actual server state
         }
     };
 
     const handleMarkAsReady = async (orderId: string) => {
+        // Optimistic UI
+        setMyPreparedOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: OrderStatus.READY } : o));
+
         try {
             await markOrderAsReady(orderId);
             window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order is now READY!' } }));
-            fetchData();
+            setTimeout(() => fetchData(), 500);
         } catch (e) {
             window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to update status.' } }));
+            fetchData();
         }
     };
 
@@ -95,9 +119,31 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
         return <div className="p-10 text-center text-gray-500 uppercase tracking-widest font-black">Scanning ledger...</div>;
     }
 
+    const getOrderTimeLabel = (order: Order) => {
+        if (activeTab === 'available') {
+            return `Ordered: ${new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        
+        if (order.status === OrderStatus.COLLECTED || order.status === OrderStatus.DELIVERED) {
+            return `Collected: ${order.deliveredAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'Done'}`;
+        }
+        
+        if (order.status === OrderStatus.PREPARING) {
+            return `Started: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        
+        return `Ready: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    };
+
     return (
         <div className="space-y-4 max-w-2xl mx-auto w-full pb-20">
-            <div className="flex bg-black/30 p-1 rounded-2xl border border-white/5 mb-6">
+            <div className="flex bg-black/30 p-1 rounded-2xl border border-white/5 mb-6 relative">
+                {loading && (unclaimedOrders.length > 0 || myPreparedOrders.length > 0) && (
+                    <div className="absolute -top-6 right-2 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Syncing</span>
+                    </div>
+                )}
                 <button 
                     onClick={() => setActiveTab('available')}
                     className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'available' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
@@ -133,9 +179,7 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
                                     </div>
                                     <p className="text-lg font-bold text-white uppercase tracking-tight mt-2">{order.studentName}</p>
                                     <p className="text-[10px] text-gray-500 font-mono">
-                                        {activeTab === 'available' 
-                                            ? `Time: ${new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                                            : `Ready: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                        {getOrderTimeLabel(order)}
                                     </p>
                                 </div>
                                 <div className="text-right">

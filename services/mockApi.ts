@@ -166,7 +166,7 @@ export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => 
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
-        .in('status', [OrderStatusEnum.PREPARING, OrderStatusEnum.READY, OrderStatusEnum.PREPARED])
+        .in('status', [OrderStatusEnum.PREPARING, OrderStatusEnum.READY, OrderStatusEnum.PREPARED, OrderStatusEnum.COLLECTED, OrderStatusEnum.DELIVERED])
         .eq('prepared_by', id)
         .order('prepared_at', { ascending: false })
         .limit(50);
