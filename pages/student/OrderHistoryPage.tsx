@@ -20,7 +20,7 @@ const saveCartToStorage = (cart: CartItem[]) => {
 const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> = ({ order, onReorder }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     
-    const isCollected = order.status === OrderStatus.COLLECTED || order.status === OrderStatus.DELIVERED;
+    const isCollected = order.status === OrderStatus.COLLECTED;
     const isPaid = order.payment_status === 'paid' || order.paymentSuccess;
     const isPreparing = order.status === OrderStatus.PREPARING;
     const isReady = order.status === OrderStatus.READY;
@@ -125,10 +125,15 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                                 </div>
                             </div>
 
-                            {isCollected && order.deliveredAt && (
+                            {isCollected && (
                                 <div className="mt-4 p-3 bg-indigo-500/5 border border-indigo-500/10 rounded-xl text-center">
-                                    <p className="text-[10px] text-indigo-300/60 uppercase font-black tracking-widest">Collection Timestamp</p>
-                                    <p className="text-xs font-bold text-indigo-200 mt-1">{new Date(order.deliveredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                                    <p className="text-[10px] text-indigo-300/60 uppercase font-black tracking-widest">Collection Info</p>
+                                    <p className="text-xs font-bold text-indigo-200 mt-1">
+                                        {order.deliveredAt ? new Date(order.deliveredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Done'}
+                                    </p>
+                                    {order.deliveredByStaffName && (
+                                        <p className="text-[10px] text-indigo-400 font-black mt-2 uppercase tracking-widest">Collected by: {order.deliveredByStaffName}</p>
+                                    )}
                                 </div>
                             )}
                         </div>

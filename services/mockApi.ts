@@ -10,7 +10,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- OPTIMIZED FIELD SELECTIONS ---
 const MENU_FIELDS = 'id, name, price, is_available, image_url, emoji, description, average_rating, favorite_count, is_combo, combo_items';
-const ORDER_MINIMAL_FIELDS = 'id, student_id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_by_staff_id, delivered_at, coupon_code, discount_amount, prepared_by, prepared_by_name';
+const ORDER_MINIMAL_FIELDS = 'id, student_id, student_name, customer_phone, total_amount, status, payment_status, items, created_at, seat_number, prepared_at, qr_token, delivered_by_staff_name, delivered_by_staff_id, delivered_at, coupon_code, discount_amount, prepared_by_id, prepared_by_name';
 
 // --- HELPER MAPPERS ---
 const mapUser = (row: any): User => ({
@@ -71,8 +71,8 @@ const mapOrder = (row: any): Order => {
         orderType: 'real',
         couponCode: row.coupon_code || '', 
         discountAmount: Number(row.discount_amount || 0),
-        preparedBy: row.prepared_by,
-        prepared_by_id: row.prepared_by,
+        preparedBy: row.prepared_by_id,
+        prepared_by_id: row.prepared_by_id,
         preparedByName: row.prepared_by_name,
         prepared_by_name: row.prepared_by_name,
         preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
@@ -156,7 +156,7 @@ export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
         .eq('status', OrderStatusEnum.NEW)
-        .is('prepared_by', null)
+        .is('prepared_by_id', null)
         .ilike('payment_status', 'paid')
         .order('created_at', { ascending: true });
         
@@ -169,7 +169,7 @@ export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => 
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
         .in('status', [OrderStatusEnum.PREPARING, OrderStatusEnum.READY])
-        .eq('prepared_by', id)
+        .eq('prepared_by_id', id)
         .order('prepared_at', { ascending: false })
         .limit(50);
         
@@ -180,7 +180,6 @@ export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => 
 export const markOrderAsPreparing = async (oId: string, sId: string, sName: string) => {
     const { error } = await supabase.from('orders').update({ 
         status: OrderStatusEnum.PREPARING, 
-        prepared_by: sId, 
         prepared_by_id: sId,
         prepared_by_name: sName,
         prepared_at: new Date().toISOString() 
@@ -195,11 +194,13 @@ export const markOrderAsReady = async (oId: string) => {
     if (error) throw error;
 };
 
-export const markOrderAsPrepared = async (oId: string, sId: string) => {
+export const markOrderAsCollected = async (oId: string, sId: string, sName: string) => {
     const { error } = await supabase.from('orders').update({ 
-        status: OrderStatusEnum.PREPARED, 
-        prepared_by: sId, 
-        prepared_at: new Date().toISOString() 
+        status: OrderStatusEnum.COLLECTED,
+        delivered_by_staff_id: sId,
+        delivered_by_staff_name: sName,
+        delivered_at: new Date().toISOString(),
+        qr_token: `REDEEMED-${Date.now()}`
     }).eq('id', oId);
     if (error) throw error;
 };
@@ -429,7 +430,7 @@ export const placeOrder = async (order: any): Promise<Order> => {
 
 export const updateOrderStatus = async (orderId: string, status: OrderStatusEnum, staffId?: string, staffName?: string): Promise<void> => {
     const updates: any = { status };
-    if (status === OrderStatusEnum.COLLECTED || status === OrderStatusEnum.DELIVERED) {
+    if (status === OrderStatusEnum.COLLECTED) {
         updates.delivered_at = new Date().toISOString();
         if (staffId) updates.delivered_by_staff_id = staffId;
         updates.delivered_by_staff_name = staffName || 'Staff';

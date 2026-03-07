@@ -95,7 +95,7 @@ const OrderSuccessPage: React.FC = () => {
           }
           
           // Only show popup when transitioning to a "Ready" state
-          if (location.state?.showSuccessToast && (orderData.status === OrderStatus.QR_GENERATED)) {
+          if (location.state?.showSuccessToast && (orderData.status === OrderStatus.NEW)) {
               setShowPopup(true);
               window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Verification Successful!', type: 'payment-success' } }));
           }
@@ -118,7 +118,7 @@ const OrderSuccessPage: React.FC = () => {
                     setCurrentStatus(newStatus);
                     setOrder(updatedOrder);
                     
-                    if (newStatus === OrderStatus.QR_GENERATED) {
+                    if (newStatus === OrderStatus.NEW) {
                         setShowPopup(true);
                     }
                     

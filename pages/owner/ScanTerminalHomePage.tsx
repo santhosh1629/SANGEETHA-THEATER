@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, Navigate } from 'react-router-dom';
 import ScanQrPage from './ScanQrPage'; 
-import { getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, markOrderAsPreparing, markOrderAsReady, supabase } from '../../services/mockApi';
+import { getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, markOrderAsPreparing, markOrderAsReady, markOrderAsCollected, supabase } from '../../services/mockApi';
 import type { Order } from '../../types';
 import { OrderStatus } from '../../types';
 
@@ -113,6 +113,20 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
         }
     };
 
+    const handleMarkAsCollected = async (orderId: string) => {
+        // Optimistic UI
+        setMyPreparedOrders(prev => prev.filter(o => o.id !== orderId));
+
+        try {
+            await markOrderAsCollected(orderId, staffId, staffName);
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order DELIVERED!' } }));
+            setTimeout(() => fetchData(), 500);
+        } catch (e) {
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to deliver order.' } }));
+            fetchData();
+        }
+    };
+
     const ordersToDisplay = activeTab === 'available' ? unclaimedOrders : myPreparedOrders;
 
     if (loading && unclaimedOrders.length === 0 && myPreparedOrders.length === 0) {
@@ -216,14 +230,24 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
                                     PREPARE BY ME
                                 </button>
                             ) : (
-                                order.status === OrderStatus.PREPARING && (
-                                    <button 
-                                        onClick={() => handleMarkAsReady(order.id)}
-                                        className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-green-600/20"
-                                    >
-                                        MARK AS READY
-                                    </button>
-                                )
+                                <div className="space-y-2">
+                                    {order.status === OrderStatus.PREPARING && (
+                                        <button 
+                                            onClick={() => handleMarkAsReady(order.id)}
+                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-indigo-600/20"
+                                        >
+                                            MARK AS READY
+                                        </button>
+                                    )}
+                                    {order.status === OrderStatus.READY && (
+                                        <button 
+                                            onClick={() => handleMarkAsCollected(order.id)}
+                                            className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-green-600/20"
+                                        >
+                                            DELIVER / COLLECTED
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
                     ))}

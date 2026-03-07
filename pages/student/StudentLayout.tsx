@@ -26,8 +26,7 @@ const ActiveOrderTracker: React.FC<{ order: Order }> = ({ order }) => {
     const [timeLeft, setTimeLeft] = useState('');
 
     useEffect(() => {
-        // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
-        if (order.status !== OrderStatus.QR_GENERATED) {
+        if (order.status !== OrderStatus.NEW) {
             setTimeLeft('');
             return;
         }
@@ -62,9 +61,8 @@ const ActiveOrderTracker: React.FC<{ order: Order }> = ({ order }) => {
         return () => clearInterval(timer);
     }, [order]);
     
-    const isPrepared = order.status === OrderStatus.PREPARED;
-    // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
-    const isPending = order.status === OrderStatus.QR_GENERATED;
+    const isPrepared = order.status === OrderStatus.READY;
+    const isPending = order.status === OrderStatus.NEW;
 
     return (
         <div className={`
@@ -246,8 +244,7 @@ const CustomerLayout: React.FC = () => {
     if (user) {
         try {
             const orders = await getStudentOrders(user.id);
-            // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
-            const currentActiveOrder = orders.find(o => o.status === OrderStatus.QR_GENERATED || o.status === OrderStatus.PREPARED) || null;
+            const currentActiveOrder = orders.find(o => o.status === OrderStatus.NEW || o.status === OrderStatus.READY) || null;
 
             setActiveOrder(prevActiveOrder => {
                 if (
@@ -255,9 +252,8 @@ const CustomerLayout: React.FC = () => {
                     currentActiveOrder &&
                     prevActiveOrder &&
                     currentActiveOrder.id === prevActiveOrder.id &&
-                    // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
-                    prevActiveOrder.status === OrderStatus.QR_GENERATED &&
-                    currentActiveOrder.status === OrderStatus.PREPARED
+                    prevActiveOrder.status === OrderStatus.NEW &&
+                    currentActiveOrder.status === OrderStatus.READY
                 ) {
                     new Notification('Order is ready for pickup!', {
                         body: `Your order #${currentActiveOrder.id.slice(-6)} is prepared.`,

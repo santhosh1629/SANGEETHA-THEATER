@@ -246,7 +246,7 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
             .filter(o => 
                 (o.payment_status === 'paid' || o.paymentSuccess) && 
                 o.status !== OrderStatus.COLLECTED && 
-                o.status !== OrderStatus.DELIVERED &&
+                o.status !== OrderStatus.COLLECTED &&
                 o.status !== OrderStatus.CANCELLED
             )
             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), 
@@ -321,12 +321,12 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
                                                 <p className="text-[10px] text-gray-500 uppercase font-bold">Total</p>
                                             </div>
                                             <button onClick={() => onViewOrder(order)} className="bg-gray-700 text-gray-300 hover:text-white font-bold text-xs py-2 px-4 rounded-xl border border-gray-600 transition-all">Details</button>
-                                            {order.status !== OrderStatus.PREPARED && 
+                                            {order.status !== OrderStatus.READY && 
                                                 <button 
-                                                    onClick={() => onStatusUpdate(order.id, OrderStatus.PREPARED)} 
+                                                    onClick={() => onStatusUpdate(order.id, OrderStatus.READY)} 
                                                     className="bg-indigo-600 text-white font-black py-2 px-4 rounded-xl text-xs hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
                                                 >
-                                                    Start Preparing
+                                                    Mark as Ready
                                                 </button>
                                             }
                                         </div>
@@ -442,7 +442,6 @@ const OrderHistoryView: React.FC<{ orders: Order[] }> = ({ orders }) => {
     const historyOrders = useMemo(() => 
         orders.filter(o => 
             o.status === OrderStatus.COLLECTED || 
-            o.status === OrderStatus.DELIVERED || 
             o.status === OrderStatus.CANCELLED
         ), 
     [orders]);
@@ -454,7 +453,6 @@ const OrderHistoryView: React.FC<{ orders: Order[] }> = ({ orders }) => {
     const getBadge = (status: OrderStatus) => {
         switch(status) {
             case OrderStatus.COLLECTED:
-            case OrderStatus.DELIVERED:
                 return 'bg-green-500/20 text-green-300 border border-green-500/30';
             case OrderStatus.CANCELLED:
                 return 'bg-red-500/20 text-red-300 border border-red-500/30';
@@ -668,7 +666,7 @@ export const OwnerDashboard: React.FC = () => {
             todayStart.setHours(0, 0, 0, 0);
 
             const collectedToday = ordersData.filter(o => 
-                (o.status === OrderStatus.COLLECTED || o.status === OrderStatus.DELIVERED) && 
+                (o.status === OrderStatus.COLLECTED) && 
                 o.deliveredAt && 
                 new Date(o.deliveredAt) >= todayStart && 
                 o.deliveredByStaffId
@@ -760,7 +758,7 @@ export const OwnerDashboard: React.FC = () => {
     };
     
     const historicalOrders = useMemo(() => 
-        orders.filter(o => o.status === OrderStatus.COLLECTED || o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED), 
+        orders.filter(o => o.status === OrderStatus.COLLECTED || o.status === OrderStatus.CANCELLED), 
     [orders]);
 
     const TabButton: React.FC<{ tab: DashboardTab, label: string, icon?: string }> = ({ tab, label, icon }) => (
