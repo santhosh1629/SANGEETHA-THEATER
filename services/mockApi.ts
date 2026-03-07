@@ -72,7 +72,9 @@ const mapOrder = (row: any): Order => {
         couponCode: row.coupon_code || '', 
         discountAmount: Number(row.discount_amount || 0),
         preparedBy: row.prepared_by,
+        prepared_by_id: row.prepared_by,
         preparedByName: row.prepared_by_name,
+        prepared_by_name: row.prepared_by_name,
         preparedAt: row.prepared_at ? new Date(row.prepared_at) : undefined
     };
 };
@@ -153,7 +155,7 @@ export const getStaffUnclaimedPendingOrders = async (): Promise<Order[]> => {
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
-        .eq('status', OrderStatusEnum.QR_GENERATED)
+        .eq('status', OrderStatusEnum.NEW)
         .is('prepared_by', null)
         .ilike('payment_status', 'paid')
         .order('created_at', { ascending: true });
@@ -166,7 +168,7 @@ export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => 
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_MINIMAL_FIELDS)
-        .in('status', [OrderStatusEnum.PREPARING, OrderStatusEnum.READY, OrderStatusEnum.PREPARED, OrderStatusEnum.COLLECTED, OrderStatusEnum.DELIVERED])
+        .in('status', [OrderStatusEnum.PREPARING, OrderStatusEnum.READY])
         .eq('prepared_by', id)
         .order('prepared_at', { ascending: false })
         .limit(50);
@@ -179,6 +181,7 @@ export const markOrderAsPreparing = async (oId: string, sId: string, sName: stri
     const { error } = await supabase.from('orders').update({ 
         status: OrderStatusEnum.PREPARING, 
         prepared_by: sId, 
+        prepared_by_id: sId,
         prepared_by_name: sName,
         prepared_at: new Date().toISOString() 
     }).eq('id', oId);
@@ -304,7 +307,7 @@ export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse
         const qrToken = `SECURE-ORD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
         await supabase.from('orders').update({
             payment_status: 'paid',
-            status: OrderStatusEnum.QR_GENERATED,
+            status: OrderStatusEnum.NEW,
             qr_token: qrToken,
             razorpay_payment_id: razorpayResponse.razorpay_payment_id,
             razorpay_order_id: razorpayResponse.razorpay_order_id,
@@ -415,7 +418,7 @@ export const placeOrder = async (order: any): Promise<Order> => {
         customer_phone: order.customerPhone, 
         items: order.items, 
         total_amount: Number(order.totalAmount), 
-        status: OrderStatusEnum.INITIATED, 
+        status: order.status || OrderStatusEnum.INITIATED, 
         qr_token: `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, 
         seat_number: order.seat_number, 
         payment_status: 'created'

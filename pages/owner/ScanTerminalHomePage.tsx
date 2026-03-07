@@ -9,18 +9,16 @@ import { OrderStatus } from '../../types';
 const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string }> = ({ status, paymentStatus }) => {
     const styles = {
         [OrderStatus.PAYMENT_PENDING]: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50',
-        [OrderStatus.QR_GENERATED]: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
+        [OrderStatus.NEW]: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
         [OrderStatus.PREPARING]: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
         [OrderStatus.READY]: 'bg-green-500/20 text-green-300 border-green-500/50',
-        [OrderStatus.PREPARED]: 'bg-blue-500/20 text-blue-300 border-blue-500/50',
         [OrderStatus.COLLECTED]: 'bg-green-500/20 text-green-300 border-green-500/50',
-        [OrderStatus.DELIVERED]: 'bg-green-500/20 text-green-300 border-green-500/50',
     };
     
     return (
         <div className="flex flex-wrap gap-2">
             <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase border tracking-wider ${styles[status] || 'bg-gray-500/20 text-gray-300 border-gray-500/50'}`}>
-                {status === OrderStatus.QR_GENERATED ? 'PENDING' : status}
+                {status}
             </span>
             <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase border tracking-wider ${paymentStatus === 'paid' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
                 {paymentStatus === 'paid' ? 'PAID' : 'UNPAID'}
@@ -75,7 +73,9 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
             ...orderToClaim, 
             status: OrderStatus.PREPARING, 
             preparedBy: staffId, 
+            prepared_by_id: staffId,
             preparedByName: staffName,
+            prepared_by_name: staffName,
             preparedAt: new Date() 
         };
 
@@ -124,7 +124,7 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
             return `Ordered: ${new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         }
         
-        if (order.status === OrderStatus.COLLECTED || order.status === OrderStatus.DELIVERED) {
+        if (order.status === OrderStatus.COLLECTED) {
             return `Collected: ${order.deliveredAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'Done'}`;
         }
         
@@ -132,7 +132,9 @@ const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staf
             return `Started: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         }
         
-        return `Ready: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        if (order.status === OrderStatus.READY) {
+            return `Ready: ${order.preparedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        }
     };
 
     return (

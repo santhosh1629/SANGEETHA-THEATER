@@ -350,7 +350,11 @@ const OrdersManager: React.FC<{orders: Order[], onStatusUpdate: (orderId: string
 const SeatView: React.FC<{ orders: Order[] }> = ({ orders }) => {
     const seatOrders = useMemo(() => 
         orders
-            .filter(o => o.status === OrderStatus.SEAT_SELECTED)
+            .filter(o => 
+                (o.status === OrderStatus.SEAT_SELECTED || o.status === OrderStatus.INITIATED || o.status === OrderStatus.PAYMENT_PENDING) && 
+                o.seatNumber && 
+                o.payment_status !== 'paid'
+            )
             .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()), 
         [orders]
     );

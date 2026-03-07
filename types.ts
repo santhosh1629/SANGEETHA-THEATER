@@ -54,19 +54,20 @@ export interface CartItem extends MenuItem {
 }
 
 export enum OrderStatus {
-  INITIATED = 'Initiated',
-  PAYMENT_PENDING = 'Payment Pending',
-  PAYMENT_SUCCESS = 'Payment Success',
-  PAYMENT_FAILED = 'Payment Failed',
-  QR_GENERATED = 'QR Generated',
-  PREPARING = 'Preparing',
-  READY = 'Ready',
-  PREPARED = 'Prepared',
-  DELIVERED = 'Delivered',
-  COLLECTED = 'Collected',
-  CANCELLED = 'Cancelled',
-  REFUNDED = 'Refunded',
-  SEAT_SELECTED = 'Seat Selected',
+  INITIATED = 'INITIATED',
+  PAYMENT_PENDING = 'PAYMENT_PENDING',
+  PAYMENT_SUCCESS = 'PAYMENT_SUCCESS',
+  PAYMENT_FAILED = 'PAYMENT_FAILED',
+  NEW = 'NEW',
+  QR_GENERATED = 'NEW',
+  PREPARING = 'PREPARING',
+  READY = 'READY',
+  PREPARED = 'PREPARED',
+  DELIVERED = 'DELIVERED',
+  COLLECTED = 'COLLECTED',
+  CANCELLED = 'CANCELLED',
+  REFUNDED = 'REFUNDED',
+  SEAT_SELECTED = 'SEAT_SELECTED',
 }
 
 export interface Order {
@@ -98,7 +99,9 @@ export interface Order {
   couponCode?: string;
   discountAmount?: number;
   preparedBy?: string;
+  prepared_by_id?: string;
   preparedByName?: string;
+  prepared_by_name?: string;
   preparedAt?: Date;
 }
 

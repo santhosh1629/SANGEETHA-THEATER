@@ -195,7 +195,7 @@ const CartPage: React.FC = () => {
                 })),
                 totalAmount: Number(totalAmount),
                 seat_number: seatNumber.trim(),
-                status: OrderStatus.INITIATED // Secure start
+                status: OrderStatus.SEAT_SELECTED // Mark as seat selected for owner visibility
             };
             
             const order = await placeOrder(orderPayload);
