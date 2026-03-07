@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import type { Order, MenuItem, SalesSummary, StudentPoints, TodaysDashboardStats, User } from '../../types';
 import { OrderStatus } from '../../types';
@@ -434,7 +434,18 @@ const ManagementView: React.FC<{ menu: MenuItem[]; customerPoints: StudentPoints
 
 const OrderHistoryView: React.FC<{ orders: Order[] }> = ({ orders }) => {
     const [filter, setFilter] = useState<'all' | OrderStatus>('all');
-    const filteredOrders = useMemo(() => filter === 'all' ? orders : orders.filter(o => o.status === filter), [orders, filter]);
+    
+    const historyOrders = useMemo(() => 
+        orders.filter(o => 
+            o.status === OrderStatus.COLLECTED || 
+            o.status === OrderStatus.DELIVERED || 
+            o.status === OrderStatus.CANCELLED
+        ), 
+    [orders]);
+
+    const filteredOrders = useMemo(() => 
+        filter === 'all' ? historyOrders : historyOrders.filter(o => o.status === filter), 
+    [historyOrders, filter]);
 
     const getBadge = (status: OrderStatus) => {
         switch(status) {
@@ -623,9 +634,11 @@ export const OwnerDashboard: React.FC = () => {
     
     const [loading, setLoading] = useState(true);
 
+    const isInitialLoad = useRef(true);
+
     const fetchData = useCallback(async (silent = false) => {
         if (!user) return;
-        if (!silent && orders.length === 0) setLoading(true);
+        if (!silent && isInitialLoad.current) setLoading(true);
         try {
             const [
                 ordersData, menuData, salesData, sellingItemsData, statusSummaryData,
@@ -643,6 +656,8 @@ export const OwnerDashboard: React.FC = () => {
             setCustomerPoints(pointsData);
             setTodaysStats(todaysStatsData);
             setStaff(staffData);
+            
+            isInitialLoad.current = false;
 
             // FIX: Calculating staff leaderboard based on delivery time, not order creation time
             const todayStart = new Date();
@@ -680,7 +695,7 @@ export const OwnerDashboard: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [user, orders.length]);
+    }, [user]);
 
     useEffect(() => {
         fetchData();

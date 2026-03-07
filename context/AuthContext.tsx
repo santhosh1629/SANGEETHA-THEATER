@@ -139,9 +139,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setModalInfo({ isOpen: false });
   };
   
-  const promptForPhone = (onSuccess?: () => void) => {
+  const promptForPhone = useCallback((onSuccess?: () => void) => {
     setModalInfo({ isOpen: true, onSuccess });
-  };
+  }, []);
 
 
   const login = useCallback(async (phoneOrEmail: string, password: string): Promise<User> => {

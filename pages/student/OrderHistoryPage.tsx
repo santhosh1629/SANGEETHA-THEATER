@@ -22,6 +22,8 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
     
     const isCollected = order.status === OrderStatus.COLLECTED || order.status === OrderStatus.DELIVERED;
     const isPaid = order.payment_status === 'paid' || order.paymentSuccess;
+    const isPreparing = order.status === OrderStatus.PREPARING;
+    const isReady = order.status === OrderStatus.READY;
 
     return (
         <div className="bg-surface backdrop-blur-lg border border-surface-light rounded-3xl shadow-xl overflow-hidden transition-all duration-300 mb-5 text-textPrimary group">
@@ -49,9 +51,17 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                             <span className="bg-indigo-500/20 text-indigo-300 text-[10px] px-2 py-1 rounded-md font-black border border-indigo-500/30 uppercase tracking-tighter">
                                 COLLECTED ✅
                             </span>
+                        ) : isReady ? (
+                            <span className="bg-green-500/20 text-green-300 text-[10px] px-2 py-1 rounded-md font-black border border-green-500/30 uppercase tracking-tighter animate-pulse">
+                                READY FOR PICKUP 🍿
+                            </span>
+                        ) : isPreparing ? (
+                            <span className="bg-orange-500/20 text-orange-300 text-[10px] px-2 py-1 rounded-md font-black border border-orange-500/30 uppercase tracking-tighter animate-pulse">
+                                PREPARING 🍳
+                            </span>
                         ) : (
-                            <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-1 rounded-md font-black border border-red-500/30 uppercase tracking-tighter animate-pulse">
-                                NOT COLLECTED ❌
+                            <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-1 rounded-md font-black border border-red-500/30 uppercase tracking-tighter">
+                                PENDING ⌛
                             </span>
                         )}
                     </div>
@@ -61,12 +71,17 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                         {isCollected ? (
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded-lg w-fit border border-indigo-500/20">
                                 <span>🤝</span>
-                                <span>Delivered By: <span className="text-white uppercase">{order.deliveredByStaffName || 'Sangeetha Staff'}</span></span>
+                                <span>Served By: <span className="text-white uppercase">{order.deliveredByStaffName || order.preparedByName || 'Sangeetha Staff'}</span></span>
+                            </div>
+                        ) : (order.preparedByName || order.deliveredByStaffName) ? (
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-orange-300 bg-orange-500/10 px-2 py-1 rounded-lg w-fit border border-orange-500/20">
+                                <span>🍳</span>
+                                <span>Assigned to: <span className="text-white uppercase">{order.preparedByName || order.deliveredByStaffName}</span></span>
                             </div>
                         ) : (
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-gray-500 bg-black/20 px-2 py-1 rounded-lg w-fit border border-white/5">
                                 <span>⌛</span>
-                                <span>Delivered By: Not yet delivered</span>
+                                <span>Waiting for staff assignment</span>
                             </div>
                         )}
                     </div>
@@ -135,7 +150,7 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                                         </svg>
                                      </div>
                                      <p className="text-lg font-black font-heading uppercase text-white">Order Collected</p>
-                                     <p className="text-xs font-medium text-gray-400 mt-1 italic">Served by: {order.deliveredByStaffName || 'Our Team'}</p>
+                                     <p className="text-xs font-medium text-gray-400 mt-1 italic">Served by: {order.deliveredByStaffName || order.preparedByName || 'Our Team'}</p>
                                 </div>
                              )}
                         </div>

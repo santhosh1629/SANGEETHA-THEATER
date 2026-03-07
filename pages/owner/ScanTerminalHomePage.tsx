@@ -2,16 +2,16 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, Navigate } from 'react-router-dom';
 import ScanQrPage from './ScanQrPage'; 
-import { getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, markOrderAsPrepared, supabase } from '../../services/mockApi';
+import { getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, markOrderAsPreparing, markOrderAsReady, supabase } from '../../services/mockApi';
 import type { Order } from '../../types';
 import { OrderStatus } from '../../types';
 
 const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string }> = ({ status, paymentStatus }) => {
     const styles = {
-        // Fix: Property 'PENDING' does not exist on type 'typeof OrderStatus'. Replaced with 'PAYMENT_PENDING'.
         [OrderStatus.PAYMENT_PENDING]: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50',
-        // Fix: Property 'CONFIRMED' does not exist on type 'typeof OrderStatus'. Replaced with 'QR_GENERATED'.
         [OrderStatus.QR_GENERATED]: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
+        [OrderStatus.PREPARING]: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
+        [OrderStatus.READY]: 'bg-green-500/20 text-green-300 border-green-500/50',
         [OrderStatus.PREPARED]: 'bg-blue-500/20 text-blue-300 border-blue-500/50',
         [OrderStatus.COLLECTED]: 'bg-green-500/20 text-green-300 border-green-500/50',
         [OrderStatus.DELIVERED]: 'bg-green-500/20 text-green-300 border-green-500/50',
@@ -20,7 +20,7 @@ const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string }>
     return (
         <div className="flex flex-wrap gap-2">
             <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase border tracking-wider ${styles[status] || 'bg-gray-500/20 text-gray-300 border-gray-500/50'}`}>
-                {status}
+                {status === OrderStatus.QR_GENERATED ? 'PENDING' : status}
             </span>
             <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase border tracking-wider ${paymentStatus === 'paid' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
                 {paymentStatus === 'paid' ? 'PAID' : 'UNPAID'}
@@ -29,7 +29,7 @@ const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string }>
     );
 };
 
-const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
+const StaffOrderList: React.FC<{ staffId: string; staffName: string }> = ({ staffId, staffName }) => {
     const [activeTab, setActiveTab] = useState<'available' | 'my_prepared'>('available');
     const [unclaimedOrders, setUnclaimedOrders] = useState<Order[]>([]);
     const [myPreparedOrders, setMyPreparedOrders] = useState<Order[]>([]);
@@ -66,21 +66,26 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
     }, [fetchData]);
 
     const handleClaimAndPrepare = async (orderId: string) => {
-        // --- OPTIMISTIC UI ---
         const orderToClaim = unclaimedOrders.find(o => o.id === orderId);
         if (!orderToClaim) return;
 
-        // Move item locally for instant response
-        setUnclaimedOrders(prev => prev.filter(o => o.id !== orderId));
-        setMyPreparedOrders(prev => [{ ...orderToClaim, status: OrderStatus.PREPARED, preparedAt: new Date() }, ...prev]);
-        setActiveTab('my_prepared');
-
         try {
-            await markOrderAsPrepared(orderId, staffId);
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order marked as Prepared!' } }));
+            await markOrderAsPreparing(orderId, staffId, staffName);
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order assigned to you!' } }));
+            fetchData();
+            setActiveTab('my_prepared');
         } catch (e) {
-            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order. Syncing...' } }));
-            fetchData(); // Rollback/Sync on error
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to claim order.' } }));
+        }
+    };
+
+    const handleMarkAsReady = async (orderId: string) => {
+        try {
+            await markOrderAsReady(orderId);
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Order is now READY!' } }));
+            fetchData();
+        } catch (e) {
+            window.dispatchEvent(new CustomEvent('show-owner-toast', { detail: { message: 'Failed to update status.' } }));
         }
     };
 
@@ -157,13 +162,22 @@ const StaffOrderList: React.FC<{ staffId: string }> = ({ staffId }) => {
                                 ))}
                             </div>
 
-                            {activeTab === 'available' && (
+                            {activeTab === 'available' ? (
                                 <button 
                                     onClick={() => handleClaimAndPrepare(order.id)}
                                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-indigo-600/20"
                                 >
-                                    MARK AS PREPARED
+                                    PREPARE BY ME
                                 </button>
+                            ) : (
+                                order.status === OrderStatus.PREPARING && (
+                                    <button 
+                                        onClick={() => handleMarkAsReady(order.id)}
+                                        className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-xl text-sm transition-all transform active:scale-95 shadow-lg shadow-green-600/20"
+                                    >
+                                        MARK AS READY
+                                    </button>
+                                )
                             )}
                         </div>
                     ))}
@@ -233,7 +247,7 @@ const ScanTerminalHomePage: React.FC = () => {
                             <button onClick={() => setView('dashboard')} className="mb-6 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-indigo-400 flex items-center gap-2 bg-white/5 py-2 px-4 rounded-full w-fit transition-all border border-white/5">
                                 <span className="text-base">←</span> Back
                             </button>
-                            <StaffOrderList staffId={user?.id || ''} />
+                            <StaffOrderList staffId={user?.id || ''} staffName={user?.username || 'Staff'} />
                         </div>
                     )}
 

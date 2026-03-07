@@ -59,6 +59,8 @@ export enum OrderStatus {
   PAYMENT_SUCCESS = 'Payment Success',
   PAYMENT_FAILED = 'Payment Failed',
   QR_GENERATED = 'QR Generated',
+  PREPARING = 'Preparing',
+  READY = 'Ready',
   PREPARED = 'Prepared',
   DELIVERED = 'Delivered',
   COLLECTED = 'Collected',
@@ -96,6 +98,7 @@ export interface Order {
   couponCode?: string;
   discountAmount?: number;
   preparedBy?: string;
+  preparedByName?: string;
   preparedAt?: Date;
 }
 
