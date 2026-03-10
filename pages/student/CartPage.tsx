@@ -248,7 +248,7 @@ const CartPage: React.FC = () => {
                                     <input type="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-xl text-white outline-none focus:ring-2 focus:ring-primary" placeholder="10-digit mobile" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-textSecondary uppercase mb-1">Theater Seat Number</label>
+                                    <label className="block text-xs font-bold text-textSecondary uppercase mb-1">Theatre Seat Number</label>
                                     <input type="text" value={seatNumber} onChange={e => setSeatNumber(e.target.value)} className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-xl text-white outline-none focus:ring-2 focus:ring-primary" placeholder="e.g., Row B - 12" />
                                 </div>
                             </div>

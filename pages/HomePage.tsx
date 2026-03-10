@@ -68,7 +68,7 @@ const CopyrightModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 onClick={(e) => e.stopPropagation()}
             >
                 <p className="text-lg font-semibold">
-                    © 2025 Sangeetha Theatre
+                    © 2025 SANGEETHA THEATRE
                 </p>
                 <p className="mt-2 text-sm text-textSecondary">
                     Developed by SANTHOSH P.
@@ -166,7 +166,7 @@ const HomePage: React.FC = () => {
 
             <main className="relative z-20 flex flex-col items-center justify-center text-center">
                  <h1 className="font-heading text-3xl sm:text-5xl lg:text-7xl font-black whitespace-nowrap" style={{ textShadow: '0 4px 20px rgba(255,0,51,0.4)' }}>
-                    <span className="text-textPrimary">🍿SANGEETHA ✨ THEATER🎬</span>
+                    <span className="text-textPrimary">🍿SANGEETHA THEATRE🎬</span>
                 </h1>
 
                 <div className="mt-4 h-10 text-center animate-fade-in-down" style={{animationDelay: '0.5s', textShadow: '0 2px 8px rgba(0,0,0,0.4)'}}>

@@ -9,9 +9,9 @@ export const CONFIG = {
     RAZORPAY_KEY_ID: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_S0V6Bz1xXIWsbn',
     
     // Feature Toggles
-    USE_EDGE_FUNCTIONS: true, 
+    USE_EDGE_FUNCTIONS: false, 
     
     // Other settings
-    APP_NAME: 'SANGEETHA THEATER',
-    SUPPORT_EMAIL: 'support@sangeethatheater.app'
+    APP_NAME: 'Sangeetha Theatre',
+    SUPPORT_EMAIL: 'support@sangeethatheatre.app'
 };

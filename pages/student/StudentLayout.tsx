@@ -353,7 +353,7 @@ const CustomerLayout: React.FC = () => {
       {/* Side Drawer */}
       <aside className={`fixed top-0 left-0 h-full w-64 bg-background/90 backdrop-blur-xl border-r border-surface-light shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${isDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between p-4 border-b border-surface-light h-16">
-              <h2 className="text-xl font-bold font-heading text-primary">SANGEETHA THEATER</h2>
+              <h2 className="text-xl font-bold font-heading text-primary">Sangeetha Theatre</h2>
               <button onClick={() => setIsDrawerOpen(false)} className="text-gray-400 hover:text-white">
                   <CloseIcon />
               </button>
