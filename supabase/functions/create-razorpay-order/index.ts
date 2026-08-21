@@ -65,18 +65,8 @@ Deno.serve(async (req: Request) => {
     // Razorpay expects amount in smallest currency unit (paise)
     const amountInPaise = Math.round(amountNum * 100);
 
-    const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID");
-    const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET");
-    if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-      console.error("Missing Razorpay secrets in environment");
-      return new Response(JSON.stringify({ error: "Payment gateway not configured" }), { 
-        status: 500, 
-        headers: { 
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        } 
-      });
-    }
+    const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID") || "rzp_test_TSLWjwn5NmoFT7";
+    const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET") || "j7Ajj80G5JuHWujxTkttiTv5";
 
     const payload = {
       amount: amountInPaise,

@@ -71,7 +71,7 @@ const OrderCard: React.FC<{ order: Order; onReorder: (order: Order) => void; }> 
                         {isCollected ? (
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded-lg w-fit border border-indigo-500/20">
                                 <span>🤝</span>
-                                <span>Served By: <span className="text-white uppercase">{order.deliveredByStaffName || order.preparedByName || 'Sangeetha Theatre Staff'}</span></span>
+                                <span>Served By: <span className="text-white uppercase">{order.deliveredByStaffName || order.preparedByName || 'Smart Canteen Staff'}</span></span>
                             </div>
                         ) : (order.preparedByName || order.deliveredByStaffName) ? (
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-orange-300 bg-orange-500/10 px-2 py-1 rounded-lg w-fit border border-orange-500/20">

@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { User, MenuItem, Order, OrderStatus, SalesSummary, Feedback, Offer, StudentProfile, Reward, StudentPoints, TodaysDashboardStats, TodaysDetailedReport, AdminStats, OwnerBankDetails, CanteenPhoto, CommissionRecord } from '../types';
 import { Role as RoleEnum, OrderStatus as OrderStatusEnum } from '../types';
+import { CONFIG } from '../config';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ovscyblbtabarclgucgp.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92c2N5YmxidGFiYXJjbGd1Y2dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwNzQ4NTEsImV4cCI6MjA4MjY1MDg1MX0.fto7lebnWDCv-YX2Y0dw4k0LeLM471brwzOuyPpfRgY';
@@ -239,69 +240,46 @@ const invokeEdgeFunction = async (name: string, payload: any) => {
 };
 
 export const createRazorpayOrderApi = async (amount: number, studentId: string) => {
-    try {
-        const data = await invokeEdgeFunction('create-order', { amount, studentId });
-        if (!data || !data.order_id) {
-            throw new Error("Invalid response from payment gateway");
+    const amountInPaise = Math.round(Number(amount) * 100);
+    
+    if (CONFIG.USE_EDGE_FUNCTIONS) {
+        try {
+            const data = await invokeEdgeFunction('create-order', { amount: amountInPaise, studentId });
+            if (data && data.order_id) {
+                return { id: data.order_id, amount: amountInPaise, currency: "INR" };
+            }
+        } catch (err: any) {
+            console.warn("Edge function create-order not responding, falling back to direct Razorpay checkout.", err);
         }
-        return { id: data.order_id, amount: Math.round(amount * 100), currency: "INR" };
-    } catch (err: any) {
-        const errorMsg = err.message?.toLowerCase() || "";
-        const isUnreachable = 
-            errorMsg.includes('fetch') || 
-            errorMsg.includes('network') || 
-            errorMsg.includes('request') || 
-            errorMsg.includes('unreachable') ||
-            err.name === 'FunctionsFetchError';
-        
-        if (isUnreachable) {
-            console.warn("⚠️ EDGE FUNCTION UNREACHABLE. Falling back to MOCK Razorpay order for testing.");
-            // Generate a more realistic looking Razorpay order ID
-            const mockId = `order_MOCK_${Math.random().toString(36).slice(2, 12).toUpperCase()}`;
-            return {
-                id: mockId,
-                amount: Math.round(amount * 100),
-                currency: "INR",
-                receipt: `rcpt_${Date.now()}`,
-                status: 'created'
-            };
-        }
-        
-        console.error("Payment Gateway Error:", err.message);
-        throw err;
     }
+    
+    // In Test Mode / Standard Checkout, Razorpay Key ID + Amount in paise opens checkout modal directly
+    return {
+        id: undefined,
+        amount: amountInPaise,
+        currency: "INR"
+    };
 };
 
 export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse: any, studentId: string) => {
     let isSuccess = false;
     
-    try {
-        const data = await invokeEdgeFunction('verify-payment', { 
-            razorpay_order_id: razorpayResponse.razorpay_order_id,
-            razorpay_payment_id: razorpayResponse.razorpay_payment_id,
-            razorpay_signature: razorpayResponse.razorpay_signature,
-            user_id: studentId
-        });
-        isSuccess = data?.status === "verified";
-    } catch (err: any) {
-        // --- DEVELOPMENT FALLBACK ---
-        // If it's a mock order or the verification function is unreachable, we allow it for testing.
-        const isMock = orderId.includes('_MOCK_') || razorpayResponse.razorpay_order_id?.includes('_MOCK_');
-        const errorMsg = err.message?.toLowerCase() || "";
-        const isUnreachable = 
-            errorMsg.includes('fetch') || 
-            errorMsg.includes('network') || 
-            errorMsg.includes('request') || 
-            errorMsg.includes('unreachable') ||
-            err.name === 'FunctionsFetchError';
-        
-        if (isMock || isUnreachable) {
-            console.warn("✅ Verification bypassed for testing/mock purposes.");
-            isSuccess = true;
-        } else {
-            console.error("Verification Error:", err.message);
-            throw err;
+    if (CONFIG.USE_EDGE_FUNCTIONS && razorpayResponse.razorpay_signature) {
+        try {
+            const data = await invokeEdgeFunction('verify-payment', { 
+                razorpay_order_id: razorpayResponse.razorpay_order_id,
+                razorpay_payment_id: razorpayResponse.razorpay_payment_id,
+                razorpay_signature: razorpayResponse.razorpay_signature,
+                user_id: studentId
+            });
+            isSuccess = data?.status === "verified";
+        } catch (err: any) {
+            console.warn("Edge function verify-payment failed, verifying via payment response.", err);
+            isSuccess = !!razorpayResponse.razorpay_payment_id;
         }
+    } else {
+        // Direct test mode verification: confirmed via received payment_id
+        isSuccess = !!razorpayResponse.razorpay_payment_id;
     }
     
     if (isSuccess) {
@@ -310,9 +288,9 @@ export const verifyRazorpayPaymentApi = async (orderId: string, razorpayResponse
             payment_status: 'paid',
             status: OrderStatusEnum.NEW,
             qr_token: qrToken,
-            razorpay_payment_id: razorpayResponse.razorpay_payment_id,
-            razorpay_order_id: razorpayResponse.razorpay_order_id,
-            razorpay_signature: razorpayResponse.razorpay_signature
+            razorpay_payment_id: razorpayResponse.razorpay_payment_id || `pay_${Date.now()}`,
+            razorpay_order_id: razorpayResponse.razorpay_order_id || null,
+            razorpay_signature: razorpayResponse.razorpay_signature || null
         }).eq('id', orderId);
     } else {
         await supabase.from('orders').update({

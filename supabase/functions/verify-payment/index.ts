@@ -3,7 +3,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const RAZORPAY_KEY_SECRET = "aleVqiBaaVo8ZatFBmWQS1vV";
+const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET") || "j7Ajj80G5JuHWujxTkttiTv5";
 
 async function hmacSHA256(secret: string, message: string) {
   const enc = new TextEncoder();

@@ -71,10 +71,20 @@ const CartPage: React.FC = () => {
 
     const [razorpayLoaded, setRazorpayLoaded] = useState(false);
 
-    useEffect(() => {
-        const loadRazorpay = () => {
-            if (typeof Razorpay !== 'undefined') {
+    const ensureRazorpayLoaded = (): Promise<boolean> => {
+        return new Promise((resolve) => {
+            if (typeof (window as any).Razorpay !== 'undefined') {
                 setRazorpayLoaded(true);
+                resolve(true);
+                return;
+            }
+
+            const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+            if (existingScript) {
+                existingScript.addEventListener('load', () => {
+                    setRazorpayLoaded(true);
+                    resolve(true);
+                });
                 return;
             }
 
@@ -84,21 +94,28 @@ const CartPage: React.FC = () => {
             script.onload = () => {
                 console.log("Razorpay SDK loaded successfully");
                 setRazorpayLoaded(true);
+                resolve(true);
             };
             script.onerror = () => {
                 console.error("Failed to load Razorpay SDK");
+                resolve(false);
             };
             document.body.appendChild(script);
-        };
+        });
+    };
 
-        loadRazorpay();
+    useEffect(() => {
+        ensureRazorpayLoaded();
     }, []);
 
     const handlePayment = async (orderId: string, amount: number) => {
         console.log("Initiating payment for order:", orderId, "Amount:", amount);
         try {
-            if (!razorpayLoaded && typeof Razorpay === 'undefined') {
-                throw new Error("Razorpay SDK is not loaded. Please check your internet connection.");
+            const loaded = await ensureRazorpayLoaded();
+            const RazorpayClass = (window as any).Razorpay;
+
+            if (!loaded || !RazorpayClass) {
+                throw new Error("Razorpay SDK could not be loaded. Please check your internet connection.");
             }
 
             const rzpOrder = await createRazorpayOrderApi(amount, user!.id);
@@ -107,10 +124,20 @@ const CartPage: React.FC = () => {
             const options: any = {
                 key: CONFIG.RAZORPAY_KEY_ID, 
                 amount: rzpOrder.amount, 
-                currency: rzpOrder.currency,
+                currency: rzpOrder.currency || "INR",
                 name: CONFIG.APP_NAME,
-                description: "Movie Snacks Payment",
+                description: `Snack Order #${orderId.slice(-6).toUpperCase()}`,
                 image: "/favicon.ico",
+                prefill: {
+                    name: user?.username || 'Customer',
+                    email: user?.email || 'customer@smartcanteen.app',
+                    contact: phoneNumber,
+                },
+                notes: {
+                    order_id: orderId,
+                    seat_number: seatNumber,
+                },
+                theme: { color: "#FF0033" },
                 handler: async (response: any) => {
                     console.log("Razorpay Payment Success Response:", response);
                     setIsPlacingOrder(true);
@@ -128,46 +155,34 @@ const CartPage: React.FC = () => {
                         setIsPlacingOrder(false);
                     }
                 },
-                prefill: {
-                    name: user?.username || 'Customer',
-                    email: user?.email || '',
-                    contact: phoneNumber,
-                },
-                theme: { color: "#FF0033" },
                 modal: {
                     ondismiss: () => {
                         console.log("Razorpay modal dismissed");
                         setIsPlacingOrder(false);
-                    }
+                    },
+                    escape: true,
+                    backdropclose: false
                 }
             };
 
-            // ONLY add order_id if it's NOT a mock ID
-            if (rzpOrder.id && !rzpOrder.id.includes('_MOCK_')) {
+            // Only attach order_id if present
+            if (rzpOrder.id) {
                 options.order_id = rzpOrder.id;
-            } else {
-                console.warn("Using Standard Checkout fallback because Order ID is mock.");
-                // For Live Keys, Razorpay might require an order_id.
-                // If it fails, we should tell the user.
             }
             
             console.log("Opening Razorpay with options:", options);
             
-            try {
-                const rzp = new Razorpay(options);
-                
-                rzp.on('payment.failed', function (response: any) {
-                    console.error("Razorpay Payment Failed:", response.error);
-                    window.dispatchEvent(new CustomEvent('show-toast', { 
-                        detail: { message: `Payment Failed: ${response.error.description}`, type: 'payment-error' } 
-                    }));
-                });
+            const rzp = new RazorpayClass(options);
+            
+            rzp.on('payment.failed', function (response: any) {
+                console.error("Razorpay Payment Failed:", response.error);
+                window.dispatchEvent(new CustomEvent('show-toast', { 
+                    detail: { message: `Payment Failed: ${response.error?.description || 'Transaction unsuccessful'}`, type: 'payment-error' } 
+                }));
+                setIsPlacingOrder(false);
+            });
 
-                rzp.open();
-            } catch (rzpErr: any) {
-                console.error("Razorpay Constructor/Open Error:", rzpErr);
-                throw new Error(`Razorpay failed to open: ${rzpErr.message}`);
-            }
+            rzp.open();
         } catch (err: any) {
             console.error("Checkout System Error:", err);
             window.dispatchEvent(new CustomEvent('show-toast', { 

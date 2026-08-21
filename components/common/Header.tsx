@@ -42,7 +42,7 @@ const Header: React.FC = () => {
         <div className="flex items-center justify-between h-16">
           <Link to={getHomeLink()} className="flex items-center gap-2 text-2xl font-bold font-heading text-indigo-400">
             <CinemaIcon />
-            Sangeetha Theatre
+            Smart Canteen
           </Link>
           <div className="flex items-center gap-4">
             {user && (

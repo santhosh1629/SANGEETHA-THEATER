@@ -1,6 +1,6 @@
 {
-  "name": "Sangeetha Theatre",
-  "description": "Sangeetha Theatre",
+  "name": "Smart Canteen",
+  "description": "Smart Canteen",
   "requestFramePermissions": [
     "camera"
   ]

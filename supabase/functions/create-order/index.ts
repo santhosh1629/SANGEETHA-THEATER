@@ -2,8 +2,8 @@
 // create-order/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-const RAZORPAY_KEY_ID = "rzp_live_S0V6Bz1xXIWsbn";
-const RAZORPAY_KEY_SECRET = "aleVqiBaaVo8ZatFBmWQS1vV";
+const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID") || "rzp_test_TSLWjwn5NmoFT7";
+const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET") || "j7Ajj80G5JuHWujxTkttiTv5";
 
 serve(async (req: Request) => {
   try {
@@ -27,6 +27,8 @@ serve(async (req: Request) => {
       });
     }
 
+    const amountInPaise = Math.round(Number(amount) < 500 && !Number.isInteger(Number(amount) * 100) ? Number(amount) * 100 : Number(amount) > 1000 ? Number(amount) : Number(amount) * 100);
+    
     // Razorpay API call to create order
     // payment_capture: 1 means auto-capture
     const response = await fetch("https://api.razorpay.com/v1/orders", {
@@ -36,7 +38,7 @@ serve(async (req: Request) => {
         "Authorization": "Basic " + btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`),
       },
       body: JSON.stringify({
-        amount: amount, // already in paise from frontend
+        amount: amountInPaise,
         currency: "INR",
         receipt: `receipt_${Date.now()}`,
         payment_capture: 1, 

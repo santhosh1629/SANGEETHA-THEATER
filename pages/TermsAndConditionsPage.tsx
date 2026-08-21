@@ -40,11 +40,11 @@ const CommonSections = () => (
      <Section title="Common Sections">
         <ul className="list-disc list-inside space-y-2">
             <li><strong>Privacy & Data Usage:</strong> Data used per privacy policy.</li>
-            <li><strong>Intellectual Property:</strong> App content/logo owned by Sangeetha Theatre.</li>
+            <li><strong>Intellectual Property:</strong> App content/logo owned by Smart Canteen.</li>
             <li><strong>Termination & Suspension:</strong> Violating accounts may be suspended.</li>
             <li><strong>Disclaimer & Liability:</strong> Not liable for indirect/incidental damages.</li>
             <li><strong>Governing Law & Disputes:</strong> Governed by local laws.</li>
-            <li><strong>Contact:</strong> <a href="mailto:support@sangeethatheatre.app" className="text-primary hover:underline">support@sangeethatheatre.app</a></li>
+            <li><strong>Contact:</strong> <a href="mailto:support@smartcanteen.app" className="text-primary hover:underline">support@smartcanteen.app</a></li>
         </ul>
     </Section>
 );
@@ -55,11 +55,11 @@ const SignupAcknowledgment = () => (
         <div className="mt-3 space-y-2">
             <div className="text-sm p-3 bg-gray-100 rounded border-l-4 border-primary">
                 <p className="font-bold">For Customers:</p>
-                <em className="text-gray-700">"I have read and agree to the Sangeetha Theatre Terms & Conditions (Customer)."</em>
+                <em className="text-gray-700">"I have read and agree to the Smart Canteen Terms & Conditions (Customer)."</em>
             </div>
             <div className="text-sm p-3 bg-gray-100 rounded border-l-4 border-secondary">
                 <p className="font-bold">For Canteen Owners:</p>
-                <em className="text-gray-700">"I have read and agree to the Sangeetha Theatre Terms & Conditions (Owner). I confirm all business/bank details are true."</em>
+                <em className="text-gray-700">"I have read and agree to the Smart Canteen Terms & Conditions (Owner). I confirm all business/bank details are true."</em>
             </div>
         </div>
     </div>

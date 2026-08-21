@@ -145,7 +145,7 @@ const RegisterOwnerPage: React.FC = () => {
                                 <label htmlFor="terms" className="text-xs text-gray-300">
                                     I have read and agree to the{' '}
                                     <Link to="/terms?for=owner" className="font-bold text-indigo-400 hover:underline">
-                                        Sangeetha Theatre Terms & Conditions (Owner).
+                                        Smart Canteen Terms & Conditions (Owner).
                                     </Link>
                                     {' '}I confirm all business/bank details are true.
                                 </label>

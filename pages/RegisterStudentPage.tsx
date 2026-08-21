@@ -59,7 +59,7 @@ const RegisterCustomerPage: React.FC = () => {
       <div ref={cardRef} className="relative max-w-md w-full bg-surface/50 backdrop-blur-xl border border-surface-light rounded-2xl shadow-2xl p-8 z-10">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-extrabold text-textPrimary font-heading">Create Account</h1>
-          <p className="text-textSecondary/80 mt-2">Join Sangeetha Theatre!</p>
+          <p className="text-textSecondary/80 mt-2">Join Smart Canteen!</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -117,7 +117,7 @@ const RegisterCustomerPage: React.FC = () => {
               <label htmlFor="terms" className="text-xs text-textSecondary">
                   I have read and agree to the{' '}
                   <Link to="/terms?for=customer" className="font-bold text-primary hover:underline">
-                      Sangeetha Theatre Terms & Conditions (Customer).
+                      Smart Canteen Terms & Conditions (Customer).
                   </Link>
               </label>
           </div>

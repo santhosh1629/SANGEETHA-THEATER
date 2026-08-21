@@ -5,13 +5,14 @@
  */
 
 export const CONFIG = {
-    // Your Live Public Key
-    RAZORPAY_KEY_ID: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_S0V6Bz1xXIWsbn',
+    // Razorpay Test Mode Key (Test Mode Active)
+    RAZORPAY_KEY_ID: 'rzp_test_TSLWjwn5NmoFT7',
+    RAZORPAY_KEY_SECRET: 'j7Ajj80G5JuHWujxTkttiTv5',
     
     // Feature Toggles
     USE_EDGE_FUNCTIONS: false, 
     
     // Other settings
-    APP_NAME: 'Sangeetha Theatre',
-    SUPPORT_EMAIL: 'support@sangeethatheatre.app'
+    APP_NAME: 'Smart Canteen',
+    SUPPORT_EMAIL: 'support@smartcanteen.app'
 };
