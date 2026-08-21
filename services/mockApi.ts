@@ -178,21 +178,71 @@ export const getStaffMyPreparedOrders = async (id: string): Promise<Order[]> => 
     return data.map(mapOrder);
 };
 
-export const markOrderAsPreparing = async (oId: string, sId: string, sName: string) => {
-    const { error } = await supabase.from('orders').update({ 
-        status: OrderStatusEnum.PREPARING, 
-        prepared_by_id: sId,
-        prepared_by_name: sName,
-        prepared_at: new Date().toISOString() 
-    }).eq('id', oId);
-    if (error) throw error;
+/**
+ * ATOMIC CLAIM: Atomically claim an order for preparation.
+ * Uses conditional WHERE (prepared_by_id IS NULL AND status = 'NEW') so only one staff member can claim it.
+ */
+export const claimOrderAsPreparing = async (oId: string, sId: string, sName: string): Promise<Order> => {
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+        .from('orders')
+        .update({ 
+            status: OrderStatusEnum.PREPARING, 
+            prepared_by_id: sId,
+            prepared_by_name: sName,
+            prepared_at: nowIso 
+        })
+        .eq('id', oId)
+        .is('prepared_by_id', null)
+        .eq('status', OrderStatusEnum.NEW)
+        .select(ORDER_MINIMAL_FIELDS);
+
+    if (error) {
+        throw new Error(error.message || "Failed to claim order.");
+    }
+
+    if (!data || data.length === 0) {
+        // Find who claimed it or current status for helpful error
+        const { data: existing } = await supabase
+            .from('orders')
+            .select('prepared_by_name, status')
+            .eq('id', oId)
+            .maybeSingle();
+
+        if (existing?.prepared_by_name) {
+            throw new Error(`Order already claimed by ${existing.prepared_by_name}.`);
+        } else if (existing?.status && existing.status !== OrderStatusEnum.NEW) {
+            throw new Error(`Order is already in ${existing.status} status.`);
+        }
+        throw new Error("Order already claimed by another staff member.");
+    }
+
+    return mapOrder(data[0]);
 };
 
-export const markOrderAsReady = async (oId: string) => {
-    const { error } = await supabase.from('orders').update({ 
-        status: OrderStatusEnum.READY
-    }).eq('id', oId);
-    if (error) throw error;
+export const markOrderAsPreparing = async (oId: string, sId: string, sName: string) => {
+    return await claimOrderAsPreparing(oId, sId, sName);
+};
+
+export const markOrderAsReady = async (oId: string, sId?: string): Promise<Order> => {
+    let query = supabase
+        .from('orders')
+        .update({ 
+            status: OrderStatusEnum.READY
+        })
+        .eq('id', oId)
+        .eq('status', OrderStatusEnum.PREPARING);
+
+    if (sId) {
+        query = query.eq('prepared_by_id', sId);
+    }
+
+    const { data, error } = await query.select(ORDER_MINIMAL_FIELDS);
+    if (error) throw new Error(error.message || "Failed to mark order as ready.");
+    if (!data || data.length === 0) {
+        throw new Error("Cannot mark as ready: order is not in PREPARING state or was claimed by another staff.");
+    }
+    return mapOrder(data[0]);
 };
 
 export const markOrderAsCollected = async (oId: string, sId: string, sName: string) => {
@@ -435,31 +485,62 @@ export const deleteScanTerminalStaff = async (id: string) => {
 };
 
 export const verifyQrCodeAndCollectOrder = async (qrToken: string, staffId: string): Promise<Order> => {
-    const { data: orderData, error: findError } = await supabase.from('orders').select('*').eq('qr_token', qrToken).maybeSingle();
-    if (findError || !orderData) throw new Error("Invalid QR code.");
+    if (!qrToken || typeof qrToken !== 'string') {
+        throw new Error("Invalid QR code format.");
+    }
+    const cleanToken = qrToken.trim();
+
+    if (cleanToken.startsWith('REDEEMED-')) {
+        throw new Error("This QR code has already been scanned and order collected.");
+    }
+
+    const { data: orderData, error: findError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('qr_token', cleanToken)
+        .maybeSingle();
+
+    if (findError || !orderData) {
+        throw new Error("Invalid or unverified QR code.");
+    }
     const order = mapOrder(orderData);
     
-    if (order.status === OrderStatusEnum.COLLECTED) throw new Error("Order already collected.");
+    if (order.status === OrderStatusEnum.COLLECTED) {
+        throw new Error("Order has already been collected.");
+    }
+
+    if (order.status === OrderStatusEnum.CANCELLED) {
+        throw new Error("Cannot collect a cancelled order.");
+    }
     
     // Ensure order is paid
     if (order.payment_status !== 'paid' && !order.paymentSuccess) {
         throw new Error("Order payment not verified.");
     }
 
-    const { data: staffData } = await supabase.from('users').select('username').eq('id', staffId).single();
+    const { data: staffData } = await supabase.from('users').select('username').eq('id', staffId).maybeSingle();
     const staffName = staffData?.username || 'Staff';
     
-    const { error: updateError } = await supabase.from('orders').update({
-        status: OrderStatusEnum.COLLECTED,
-        delivered_by_staff_id: staffId,
-        delivered_by_staff_name: staffName,
-        delivered_at: new Date().toISOString(),
-        qr_token: `REDEEMED-${Date.now()}` // Prevent reuse
-    }).eq('id', order.id);
+    // Atomic update to mark collected and invalidate token in one step
+    const { data: updatedData, error: updateError } = await supabase
+        .from('orders')
+        .update({
+            status: OrderStatusEnum.COLLECTED,
+            delivered_by_staff_id: staffId,
+            delivered_by_staff_name: staffName,
+            delivered_at: new Date().toISOString(),
+            qr_token: `REDEEMED-${Date.now()}` // Prevent reuse
+        })
+        .eq('id', order.id)
+        .neq('status', OrderStatusEnum.COLLECTED)
+        .select();
 
     if (updateError) throw updateError;
+    if (!updatedData || updatedData.length === 0) {
+        throw new Error("Order was already collected by another staff member.");
+    }
     
-    return await getOrderById(order.id);
+    return mapOrder(updatedData[0]);
 };
 
 export const getStudentPointsList = async (): Promise<StudentPoints[]> => {

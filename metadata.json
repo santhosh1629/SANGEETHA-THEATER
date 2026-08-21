@@ -1,7 +1,10 @@
 {
   "name": "Smart Canteen",
-  "description": "Smart Canteen",
+  "description": "Smart Canteen with real-time staff workflow and QR verification",
   "requestFramePermissions": [
     "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }
