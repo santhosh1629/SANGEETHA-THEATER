@@ -205,16 +205,17 @@ export const claimOrderAsPreparing = async (oId: string, sId: string, sName: str
         // Find who claimed it or current status for helpful error
         const { data: existing } = await supabase
             .from('orders')
-            .select('prepared_by_name, status')
+            .select('prepared_by_name, prepared_by_id, status')
             .eq('id', oId)
             .maybeSingle();
 
-        if (existing?.prepared_by_name) {
-            throw new Error(`Order already claimed by ${existing.prepared_by_name}.`);
-        } else if (existing?.status && existing.status !== OrderStatusEnum.NEW) {
-            throw new Error(`Order is already in ${existing.status} status.`);
-        }
-        throw new Error("Order already claimed by another staff member.");
+        const alreadyPreparedErr: any = new Error("This food has already been prepared by another staff member.");
+        alreadyPreparedErr.code = 'ALREADY_PREPARED_BY_OTHER';
+        alreadyPreparedErr.name = 'ALREADY_PREPARED_BY_OTHER';
+        alreadyPreparedErr.preparedByName = existing?.prepared_by_name;
+        alreadyPreparedErr.preparedById = existing?.prepared_by_id;
+        alreadyPreparedErr.status = existing?.status;
+        throw alreadyPreparedErr;
     }
 
     return mapOrder(data[0]);

@@ -14,6 +14,7 @@ export interface UseStaffOrdersResult {
     claimOrder: (orderId: string) => Promise<Order>;
     markReady: (orderId: string) => Promise<Order>;
     refreshOrders: () => Promise<void>;
+    refreshSingleOrder: (orderId: string) => Promise<Order | null>;
 }
 
 export const useStaffOrders = (staffId: string, staffName: string): UseStaffOrdersResult => {
@@ -46,6 +47,10 @@ export const useStaffOrders = (staffId: string, staffName: string): UseStaffOrde
         await staffOrderRepository.fetchOrders(false);
     }, []);
 
+    const refreshSingleOrder = useCallback(async (orderId: string): Promise<Order | null> => {
+        return await staffOrderRepository.refreshSingleOrder(orderId);
+    }, []);
+
     return {
         unclaimedOrders: state.unclaimedOrders,
         myPreparedOrders: state.myPreparedOrders,
@@ -56,6 +61,7 @@ export const useStaffOrders = (staffId: string, staffName: string): UseStaffOrde
         actionInProgressIds: state.actionInProgressIds,
         claimOrder,
         markReady,
-        refreshOrders
+        refreshOrders,
+        refreshSingleOrder
     };
 };

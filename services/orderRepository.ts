@@ -1,4 +1,4 @@
-import { supabase, getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, claimOrderAsPreparing, markOrderAsReady, verifyQrCodeAndCollectOrder } from './mockApi';
+import { supabase, getStaffUnclaimedPendingOrders, getStaffMyPreparedOrders, claimOrderAsPreparing, markOrderAsReady, verifyQrCodeAndCollectOrder, getOrderById } from './mockApi';
 import type { Order } from '../types';
 import { OrderStatus as OrderStatusEnum } from '../types';
 
@@ -196,12 +196,60 @@ class StaffOrderRepository {
             this.emit();
             return updatedOrder;
         } catch (error: any) {
-            // Re-fetch to ensure local state reflects whoever won the race
-            this.fetchOrders(false);
+            // Do NOT re-fetch all orders on error.
+            // When user acknowledges "Already Prepared By Other", refreshSingleOrder will update only this order.
             throw error;
         } finally {
             this.state.claimingIds.delete(orderId);
             this.emit();
+        }
+    }
+
+    /**
+     * Refresh only a single order's state from the server without full list refetch
+     */
+    public async refreshSingleOrder(orderId: string): Promise<Order | null> {
+        try {
+            const freshOrder = await getOrderById(orderId);
+
+            // If claimed by another staff member:
+            if (freshOrder.preparedBy && freshOrder.preparedBy !== this.activeStaffId) {
+                // Update in unclaimedOrders so that the card displays who actually prepared it
+                const inUnclaimed = this.state.unclaimedOrders.some(o => o.id === orderId);
+                if (inUnclaimed) {
+                    this.state.unclaimedOrders = this.state.unclaimedOrders.map(o => o.id === orderId ? freshOrder : o);
+                } else {
+                    this.state.unclaimedOrders = [freshOrder, ...this.state.unclaimedOrders];
+                }
+                this.state.myPreparedOrders = this.state.myPreparedOrders.filter(o => o.id !== orderId);
+            } else if (freshOrder.preparedBy === this.activeStaffId) {
+                // Claimed by current staff
+                this.state.unclaimedOrders = this.state.unclaimedOrders.filter(o => o.id !== orderId);
+                const inMyPrepared = this.state.myPreparedOrders.some(o => o.id === orderId);
+                if (inMyPrepared) {
+                    this.state.myPreparedOrders = this.state.myPreparedOrders.map(o => o.id === orderId ? freshOrder : o);
+                } else {
+                    this.state.myPreparedOrders = [freshOrder, ...this.state.myPreparedOrders];
+                }
+            } else if (freshOrder.status === OrderStatusEnum.NEW && !freshOrder.preparedBy) {
+                // Still truly unclaimed
+                const inUnclaimed = this.state.unclaimedOrders.some(o => o.id === orderId);
+                if (inUnclaimed) {
+                    this.state.unclaimedOrders = this.state.unclaimedOrders.map(o => o.id === orderId ? freshOrder : o);
+                } else {
+                    this.state.unclaimedOrders = [freshOrder, ...this.state.unclaimedOrders];
+                }
+            } else {
+                // Any other status
+                this.state.unclaimedOrders = this.state.unclaimedOrders.filter(o => o.id !== orderId);
+                this.state.myPreparedOrders = this.state.myPreparedOrders.filter(o => o.id !== orderId);
+            }
+
+            this.emit();
+            return freshOrder;
+        } catch (err) {
+            console.error("Failed to refresh single order:", err);
+            return null;
         }
     }
 

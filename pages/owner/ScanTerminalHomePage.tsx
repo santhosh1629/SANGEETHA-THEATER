@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, Navigate } from 'react-router-dom';
 import ScanQrPage from './ScanQrPage'; 
@@ -6,7 +6,12 @@ import { useStaffOrders } from '../../hooks/useStaffOrders';
 import type { Order } from '../../types';
 import { OrderStatus } from '../../types';
 
-const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string; preparedByName?: string }> = ({ status, paymentStatus, preparedByName }) => {
+const OrderStatusBadge: React.FC<{ 
+    status: OrderStatus; 
+    paymentStatus: string; 
+    preparedByName?: string;
+    isCurrentStaff?: boolean;
+}> = ({ status, paymentStatus, preparedByName, isCurrentStaff }) => {
     const statusStyles: Record<string, string> = {
         [OrderStatus.PAYMENT_PENDING]: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50',
         [OrderStatus.NEW]: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
@@ -24,8 +29,8 @@ const OrderStatusBadge: React.FC<{ status: OrderStatus; paymentStatus: string; p
                 {paymentStatus === 'paid' ? 'PAID' : 'UNPAID'}
             </span>
             {preparedByName && (
-                <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
-                    👨‍🍳 {preparedByName}
+                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border ${isCurrentStaff ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-purple-500/20 text-purple-300 border-purple-500/40'}`}>
+                    👨‍🍳 {isCurrentStaff ? 'Prepared By You ✓' : preparedByName}
                 </span>
             )}
         </div>
@@ -39,6 +44,10 @@ const StaffOrderList: React.FC<{
 }> = ({ staffId, staffName, onOpenScanner }) => {
     const [activeTab, setActiveTab] = useState<'available' | 'my_prepared'>('available');
     const [searchQuery, setSearchQuery] = useState('');
+    const [alreadyPreparedModal, setAlreadyPreparedModal] = useState<{
+        isOpen: boolean;
+        orderId: string;
+    } | null>(null);
 
     const {
         unclaimedOrders,
@@ -49,21 +58,44 @@ const StaffOrderList: React.FC<{
         actionInProgressIds,
         claimOrder,
         markReady,
-        refreshOrders
+        refreshOrders,
+        refreshSingleOrder
     } = useStaffOrders(staffId, staffName);
 
     const handleClaimAndPrepare = async (orderId: string) => {
         try {
             await claimOrder(orderId);
             window.dispatchEvent(new CustomEvent('show-owner-toast', { 
-                detail: { message: '✅ Order claimed! Added to Prepared By Me.' } 
+                detail: { message: 'Prepared By You ✓' } 
             }));
             setActiveTab('my_prepared');
         } catch (err: any) {
-            const msg = err.message || 'Failed to claim order.';
+            // Check specifically for already prepared by another staff member
+            if (
+                err?.code === 'ALREADY_PREPARED_BY_OTHER' ||
+                err?.message === 'This food has already been prepared by another staff member.' ||
+                err?.message?.includes('already been prepared') ||
+                err?.message?.includes('already claimed')
+            ) {
+                setAlreadyPreparedModal({
+                    isOpen: true,
+                    orderId
+                });
+                return;
+            }
+
+            const msg = err?.message || 'Failed to claim order.';
             window.dispatchEvent(new CustomEvent('show-owner-toast', { 
                 detail: { message: `⚠️ ${msg}` } 
             }));
+        }
+    };
+
+    const handleCloseAlreadyPreparedModal = async () => {
+        const targetOrderId = alreadyPreparedModal?.orderId;
+        setAlreadyPreparedModal(null);
+        if (targetOrderId) {
+            await refreshSingleOrder(targetOrderId);
         }
     };
 
@@ -232,10 +264,12 @@ const StaffOrderList: React.FC<{
                     {displayedOrders.map(order => {
                         const isClaiming = claimingIds.has(order.id);
                         const isActionInProgress = actionInProgressIds.has(order.id);
+                        const isClaimedByOther = !!order.preparedBy && order.preparedBy !== staffId;
 
                         return (
                             <div 
                                 key={order.id} 
+                                id={`staff-order-card-${order.id}`}
                                 className="bg-gray-800/60 backdrop-blur-md border border-white/10 p-4 sm:p-5 rounded-2xl shadow-xl transition-all hover:border-indigo-500/40 space-y-3.5"
                             >
                                 {/* Header Info */}
@@ -249,6 +283,7 @@ const StaffOrderList: React.FC<{
                                                 status={order.status} 
                                                 paymentStatus={order.payment_status} 
                                                 preparedByName={order.preparedByName}
+                                                isCurrentStaff={order.preparedBy === staffId}
                                             />
                                         </div>
                                         <div className="pt-0.5">
@@ -290,22 +325,32 @@ const StaffOrderList: React.FC<{
                                 {/* Workflow Action Buttons */}
                                 <div>
                                     {activeTab === 'available' ? (
-                                        <button 
-                                            onClick={() => handleClaimAndPrepare(order.id)}
-                                            disabled={isClaiming}
-                                            className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all transform active:scale-98 shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
-                                        >
-                                            {isClaiming ? (
-                                                <>
-                                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                                                    <span>Claiming Order...</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <span>👨‍🍳 PREPARED BY ME</span>
-                                                </>
-                                            )}
-                                        </button>
+                                        isClaimedByOther ? (
+                                            <div 
+                                                id={`order-claimed-by-other-${order.id}`}
+                                                className="w-full bg-purple-950/40 border border-purple-500/40 text-purple-300 font-bold py-3.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 shadow-inner"
+                                            >
+                                                <span>👨‍🍳 Prepared by {order.preparedByName || 'another staff member'}</span>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                id={`claim-order-btn-${order.id}`}
+                                                onClick={() => handleClaimAndPrepare(order.id)}
+                                                disabled={isClaiming}
+                                                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all transform active:scale-98 shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
+                                            >
+                                                {isClaiming ? (
+                                                    <>
+                                                        <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                                                        <span>Claiming Order...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <span>👨‍🍳 PREPARED BY ME</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        )
                                     ) : (
                                         <div className="space-y-2">
                                             {order.status === OrderStatus.PREPARING && (
@@ -342,6 +387,49 @@ const StaffOrderList: React.FC<{
                     })}
                 </div>
             )}
+
+            {/* Already Prepared By Other Dialog Modal */}
+            {alreadyPreparedModal && (
+                <div 
+                    id="already-prepared-dialog-backdrop"
+                    className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+                >
+                    <div 
+                        id="already-prepared-dialog"
+                        className="w-full max-w-sm bg-gray-900 border border-amber-500/40 rounded-2xl p-6 shadow-2xl shadow-black/80 space-y-4"
+                    >
+                        <div className="flex items-start gap-3.5">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
+                                👨‍🍳
+                            </div>
+                            <div className="space-y-1">
+                                <h3 
+                                    id="already-prepared-dialog-title" 
+                                    className="text-base font-black text-white tracking-tight"
+                                >
+                                    Already Prepared By Other
+                                </h3>
+                                <p 
+                                    id="already-prepared-dialog-message" 
+                                    className="text-xs text-gray-300 leading-relaxed"
+                                >
+                                    This food has already been prepared by another staff member.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="pt-2 flex justify-end">
+                            <button
+                                id="already-prepared-dialog-ok-btn"
+                                onClick={handleCloseAlreadyPreparedModal}
+                                className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-gray-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-500/20 active:scale-95"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -350,6 +438,21 @@ const ScanTerminalHomePage: React.FC = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [view, setView] = useState<'dashboard' | 'orders' | 'scan'>('dashboard');
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+    useEffect(() => {
+        const handleToast = (e: any) => {
+            const msg = e.detail?.message;
+            if (msg) {
+                setToastMessage(msg);
+                setTimeout(() => {
+                    setToastMessage(prev => prev === msg ? null : prev);
+                }, 3500);
+            }
+        };
+        window.addEventListener('show-owner-toast', handleToast);
+        return () => window.removeEventListener('show-owner-toast', handleToast);
+    }, []);
 
     if (user && user.canteenName) {
         return <Navigate to="/owner/dashboard" replace />;
@@ -366,6 +469,16 @@ const ScanTerminalHomePage: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-950 text-white flex flex-col font-sans">
+            {/* Toast Notification Banner */}
+            {toastMessage && (
+                <div 
+                    id="terminal-toast-banner" 
+                    className="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-gray-900/95 border border-emerald-500/40 text-emerald-300 px-5 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md text-xs font-black flex items-center gap-2 animate-fade-in-down"
+                >
+                    <span>{toastMessage}</span>
+                </div>
+            )}
+
             {/* Top Navigation Bar */}
             <header className="bg-gray-900/90 backdrop-blur-xl border-b border-white/10 p-3.5 sm:p-4 sticky top-0 z-50">
                 <div className="max-w-4xl mx-auto flex justify-between items-center">
